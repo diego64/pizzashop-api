@@ -1,28 +1,38 @@
-import { t, Elysia } from 'elysia'
-import { authentication } from '../authentication'
+import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { db } from '@/db/connection'
 import { evaluations } from '@/db/schema'
 
-export const createEvaluation = new Elysia().use(authentication).post(
-  '/evaluations',
-  async ({ body, getCurrentUser, set }) => {
-    const { sub: userId } = await getCurrentUser()
-    const { restaurantId, rate, comment } = body
+export async function createEvaluation(app: FastifyInstance) {
+  app.post(
+    '/evaluations',
+    {
+      preHandler: [app.authenticate],
+      schema: {
+        body: z.object({
+          restaurantId: z.string(),
+          rate: z.number().int().min(1).max(5),
+          comment: z.string().optional(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const { restaurantId, rate, comment } = request.body as {
+        restaurantId: string
+        rate: number
+        comment?: string
+      }
 
-    await db.insert(evaluations).values({
-      restaurantId,
-      customerId: userId,
-      rate,
-      comment,
-    })
+      const { sub: userId } = await request.getCurrentUser()
 
-    set.status = 201
-  },
-  {
-    body: t.Object({
-      restaurantId: t.String(),
-      rate: t.Integer({ minimum: 1, maximum: 5 }),
-      comment: t.Optional(t.String()),
-    }),
-  },
-)
+      await db.insert(evaluations).values({
+        restaurantId,
+        customerId: userId,
+        rate,
+        comment,
+      })
+
+      return reply.status(201).send()
+    }
+  )
+}

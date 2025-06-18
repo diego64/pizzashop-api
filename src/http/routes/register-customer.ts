@@ -1,6 +1,6 @@
-import { Elysia } from 'elysia'
-import { users } from '@/db/schema'
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { db } from '@/db/connection'
+import { users } from '@/db/schema'
 import { z } from 'zod'
 
 const registerCustomerBodySchema = z.object({
@@ -9,10 +9,11 @@ const registerCustomerBodySchema = z.object({
   email: z.string().email(),
 })
 
-export const registerCustomer = new Elysia().post(
-  '/customers',
-  async ({ body, set }) => {
-    const { name, phone, email } = registerCustomerBodySchema.parse(body)
+type RegisterCustomerBody = z.infer<typeof registerCustomerBodySchema>
+
+export async function registerCustomer(app: FastifyInstance) {
+  app.post('/customers', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { name, phone, email } = registerCustomerBodySchema.parse(request.body)
 
     await db.insert(users).values({
       name,
@@ -20,6 +21,6 @@ export const registerCustomer = new Elysia().post(
       phone,
     })
 
-    set.status = 201
-  },
-)
+    reply.status(201).send()
+  })
+}

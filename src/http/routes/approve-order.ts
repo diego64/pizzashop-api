@@ -1,29 +1,26 @@
-import { t, Elysia, Context } from 'elysia'
-import { authentication } from '../authentication'
+import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
+
 import { db } from '@/db/connection'
 import { orders } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { UnauthorizedError } from './errors/unauthorized-error'
 
-type ApproveOrderSchema = {
-  params: {
-    id: string
-  }
-}
-
-type ApproveOrderContext = Context<ApproveOrderSchema> & {
-  store: {
-    getManagedRestaurantId: () => Promise<string>
-  }
-}
-
-export const approveOrder = new Elysia()
-  .use(authentication)
-  .patch(
+export async function approveOrder(app: FastifyInstance) {
+  app.patch(
     '/orders/:id/approve',
-    async ({ params, set, store }: ApproveOrderContext) => {
-      const { id: orderId } = params
-      const restaurantId = await store.getManagedRestaurantId()
+    {
+      preHandler: [app.authenticate],
+      schema: {
+        params: z.object({
+          id: z.string(),
+        }).parse,
+      },
+    },
+    async (request, reply) => {
+      const { id: orderId } = request.params as { id: string }
+
+      const restaurantId = await request.getManagedRestaurantId()
 
       const order = await db.query.orders.findFirst({
         where(fields, { eq, and }) {
@@ -39,8 +36,9 @@ export const approveOrder = new Elysia()
       }
 
       if (order.status !== 'pending') {
-        set.status = 400
-        return { message: 'Order was already approved before.' }
+        return reply.status(400).send({
+          message: 'Order was already approved before.',
+        })
       }
 
       await db
@@ -48,11 +46,7 @@ export const approveOrder = new Elysia()
         .set({ status: 'processing' })
         .where(eq(orders.id, orderId))
 
-      set.status = 204
-    },
-    {
-      params: t.Object({
-        id: t.String(),
-      }),
-    },
+      return reply.status(204).send()
+    }
   )
+}

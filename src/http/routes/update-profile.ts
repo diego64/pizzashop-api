@@ -1,33 +1,39 @@
-import { t, Elysia, Context } from 'elysia'
-import { authentication } from '../authentication'
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import { z } from 'zod'
 import { db } from '@/db/connection'
 import { restaurants } from '@/db/schema'
 import { eq } from 'drizzle-orm'
+import { UnauthorizedError } from './errors/unauthorized-error'
 
-export const updateProfile = new Elysia()
-  .use(authentication)
-  .put(
-    '/profile',
-    async (ctx: Context<{ body: { name: string; description?: string } }> & { getManagedRestaurantId: () => Promise<number>, set: { status: number } }) => {
-      const { getManagedRestaurantId, set, body } = ctx
+const updateProfileBodySchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+})
 
-      const restaurantId = await getManagedRestaurantId()
-      const { name, description } = body
+interface RequestWithManager extends FastifyRequest {
+  getManagedRestaurantId: () => Promise<string>
+}
 
-      await db
-        .update(restaurants)
-        .set({
-          name,
-          description,
-        })
-        .where(eq(restaurants.id, restaurantId.toString()))
-
-      set.status = 204
+export async function updateProfile(app: FastifyInstance) {
+  app.put('/profile', {
+    preHandler: [app.authenticate],
+    schema: {
+      body: updateProfileBodySchema,
     },
-    {
-      body: t.Object({
-        name: t.String(),
-        description: t.Optional(t.String()),
-      }),
-    },
-  )
+  }, async (request: RequestWithManager, reply: FastifyReply) => {
+    const { name, description } = updateProfileBodySchema.parse(request.body)
+
+    const restaurantId = await request.getManagedRestaurantId()
+
+    if (!restaurantId) {
+      throw new UnauthorizedError('User is not a manager.')
+    }
+
+    await db
+      .update(restaurants)
+      .set({ name, description })
+      .where(eq(restaurants.id, restaurantId))
+
+    reply.status(204).send()
+  })
+}

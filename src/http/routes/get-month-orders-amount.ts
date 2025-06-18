@@ -1,57 +1,69 @@
-import Elysia from 'elysia'
-import { authentication } from '../authentication'
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { and, count, eq, gte, sql } from 'drizzle-orm'
 import dayjs from 'dayjs'
 import { db } from '@/db/connection'
 import { orders } from '@/db/schema'
 
-export const getMonthOrdersAmount = new Elysia()
-  .use(authentication)
-  .get('/metrics/month-orders-amount', async ({ getManagedRestaurantId }) => {
-    const restaurantId = await getManagedRestaurantId()
+interface RequestWithManagedRestaurant extends FastifyRequest {
+  getManagedRestaurantId: () => Promise<string>
+}
 
-    const today = dayjs()
-    const lastMonth = today.subtract(1, 'month')
-    const startOfLastMonth = lastMonth.startOf('month')
+export async function getMonthOrdersAmount(app: FastifyInstance) {
+  app.get(
+    '/metrics/month-orders-amount',
+    {
+      preHandler: [app.authenticate],
+    },
+    async (request: RequestWithManagedRestaurant, reply: FastifyReply) => {
+      try {
+        const restaurantId = await request.getManagedRestaurantId()
 
-    /**
-     * January is ZERO, that's why we need to sum 1 to get the actual month
-     */
-    const lastMonthWithYear = lastMonth.format('YYYY-MM')
-    const currentMonthWithYear = today.format('YYYY-MM')
+        const today = dayjs()
+        const lastMonth = today.subtract(1, 'month')
+        const startOfLastMonth = lastMonth.startOf('month')
 
-    const ordersPerMonth = await db
-      .select({
-        monthWithYear: sql<string>`TO_CHAR(${orders.createdAt}, 'YYYY-MM')`,
-        amount: count(orders.id),
-      })
-      .from(orders)
-      .where(
-        and(
-          eq(orders.restaurantId, restaurantId),
-          gte(orders.createdAt, startOfLastMonth.toDate()),
-        ),
-      )
-      .groupBy(sql`TO_CHAR(${orders.createdAt}, 'YYYY-MM')`)
-      .having(({ amount }) => gte(amount, 1))
+        const lastMonthWithYear = lastMonth.format('YYYY-MM')
+        const currentMonthWithYear = today.format('YYYY-MM')
 
-    const currentMonthOrdersAmount = ordersPerMonth.find((ordersInMonth) => {
-      return ordersInMonth.monthWithYear === currentMonthWithYear
-    })
+        const ordersPerMonth = await db
+          .select({
+            monthWithYear: sql<string>`TO_CHAR(${orders.createdAt}, 'YYYY-MM')`,
+            amount: count(orders.id),
+          })
+          .from(orders)
+          .where(
+            and(
+              eq(orders.restaurantId, restaurantId),
+              gte(orders.createdAt, startOfLastMonth.toDate()),
+            ),
+          )
+          .groupBy(sql`TO_CHAR(${orders.createdAt}, 'YYYY-MM')`)
+          .having(({ amount }) => gte(amount, 1))
 
-    const lastMonthOrdersAmount = ordersPerMonth.find((ordersInMonth) => {
-      return ordersInMonth.monthWithYear === lastMonthWithYear
-    })
+        const currentMonthOrdersAmount = ordersPerMonth.find(
+          (ordersInMonth) => ordersInMonth.monthWithYear === currentMonthWithYear,
+        )
 
-    const diffFromLastMonth =
-      lastMonthOrdersAmount && currentMonthOrdersAmount
-        ? (currentMonthOrdersAmount.amount * 100) / lastMonthOrdersAmount.amount
-        : null
+        const lastMonthOrdersAmount = ordersPerMonth.find(
+          (ordersInMonth) => ordersInMonth.monthWithYear === lastMonthWithYear,
+        )
 
-    return {
-      amount: currentMonthOrdersAmount?.amount ?? 0,
-      diffFromLastMonth: diffFromLastMonth
-        ? Number((diffFromLastMonth - 100).toFixed(2))
-        : 0,
-    }
-  })
+        const diffFromLastMonth =
+          lastMonthOrdersAmount && currentMonthOrdersAmount
+            ? (currentMonthOrdersAmount.amount * 100) / lastMonthOrdersAmount.amount
+            : null
+
+        return reply.send({
+          amount: currentMonthOrdersAmount?.amount ?? 0,
+          diffFromLastMonth: diffFromLastMonth
+            ? Number((diffFromLastMonth - 100).toFixed(2))
+            : 0,
+        })
+      } catch (error) {
+        return reply.status(500).send({
+          error: error instanceof Error ? error.message : 'Internal Server Error',
+        })
+      }
+    },
+  )
+}

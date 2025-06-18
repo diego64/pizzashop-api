@@ -1,11 +1,21 @@
-import Elysia from 'elysia'
-import { authentication } from '../authentication'
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { db } from '@/db/connection'
+import { UnauthorizedError } from './errors/unauthorized-error'
 
-export const getProfile = new Elysia()
-  .use(authentication)
-  .get('/me', async ({ getCurrentUser }) => {
-    const { sub: userId } = await getCurrentUser()
+type UserPayload = {
+  sub: string
+  restaurantId?: string
+}
+
+interface RequestWithUser extends FastifyRequest {
+  getCurrentUser: () => Promise<UserPayload>
+}
+
+export async function getProfile(app: FastifyInstance) {
+  app.get('/me', {
+    preHandler: [app.authenticate], // Usando o decorator authenticate para proteger rota
+  }, async (request: RequestWithUser, reply: FastifyReply) => {
+    const { sub: userId } = await request.getCurrentUser()
 
     const user = await db.query.users.findFirst({
       where(fields, { eq }) {
@@ -14,8 +24,9 @@ export const getProfile = new Elysia()
     })
 
     if (!user) {
-      throw new Error('User not found.')
+      throw new UnauthorizedError('User not found.')
     }
 
     return user
   })
+}

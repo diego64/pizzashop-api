@@ -1,36 +1,43 @@
-import { db } from '@/db/connection'
-import { t, Elysia } from 'elysia'
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { z } from 'zod'
-import { authentication } from '../authentication'
+import { db } from '@/db/connection'
+import { JwtPayload } from '@/http/authentication'
 
-export const getEvaluations = new Elysia().use(authentication).get(
-  '/evaluations',
-  async ({ query, set, getCurrentUser }) => {
-    const { restaurantId } = await getCurrentUser()
+const querySchema = z.object({
+  pageIndex: z.coerce.number().min(0).default(0),
+})
 
-    if (!restaurantId) {
-      set.status = 401
+type Query = z.infer<typeof querySchema>
 
-      throw new Error('User is not a restaurant manager.')
-    }
+interface RequestWithCurrentUser extends FastifyRequest {
+  getCurrentUser: () => Promise<JwtPayload>
+}
 
-    const { pageIndex } = z
-      .object({
-        pageIndex: z.coerce.number().default(0),
+export async function getEvaluations(app: FastifyInstance) {
+  app.get(
+    '/evaluations',
+    {
+      preHandler: [app.authenticate],
+      schema: {
+        querystring: querySchema,
+      },
+    },
+    async (request: RequestWithCurrentUser, reply: FastifyReply) => {
+      const { restaurantId } = await request.getCurrentUser()
+
+      if (!restaurantId) {
+        return reply.status(401).send({ error: 'User is not a restaurant manager.' })
+      }
+
+      const { pageIndex } = querySchema.parse(request.query)
+
+      const evaluations = await db.query.evaluations.findMany({
+        offset: pageIndex * 10,
+        limit: 10,
+        orderBy: (evaluations, { desc }) => desc(evaluations.createdAt),
       })
-      .parse(query)
 
-    const evaluations = await db.query.evaluations.findMany({
-      offset: pageIndex * 10,
-      limit: 10,
-      orderBy: (evaluations, { desc }) => desc(evaluations.createdAt),
-    })
-
-    return evaluations
-  },
-  {
-    query: t.Object({
-      pageIndex: t.Numeric({ minimum: 0 }),
-    }),
-  },
-)
+      return reply.send(evaluations)
+    },
+  )
+}

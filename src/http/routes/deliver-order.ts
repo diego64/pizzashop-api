@@ -1,47 +1,51 @@
-import { t, Elysia } from 'elysia'
-import { authentication } from '../authentication'
+import { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { db } from '@/db/connection'
 import { orders } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { UnauthorizedError } from './errors/unauthorized-error'
 
-export const deliverOrder = new Elysia().use(authentication).patch(
-  '/orders/:id/deliver',
-  async ({ getManagedRestaurantId, set, params }) => {
-    const { id: orderId } = params
-    const restaurantId = await getManagedRestaurantId()
-
-    const order = await db.query.orders.findFirst({
-      where(fields, { eq, and }) {
-        return and(
-          eq(fields.id, orderId),
-          eq(fields.restaurantId, restaurantId),
-        )
+export async function deliverOrder(app: FastifyInstance) {
+  app.patch(
+    '/orders/:id/deliver',
+    {
+      preHandler: [app.authenticate],
+      schema: {
+        params: z.object({
+          id: z.string(),
+        }),
       },
-    })
+    },
+    async (request, reply) => {
+      const { id: orderId } = request.params as { id: string }
 
-    if (!order) {
-      throw new UnauthorizedError()
-    }
+      const restaurantId = await request.getManagedRestaurantId()
 
-    if (order.status !== 'delivering') {
-      set.status = 400
-
-      return { message: 'O pedido já foi entregue.' }
-    }
-
-    await db
-      .update(orders)
-      .set({
-        status: 'delivered',
+      const order = await db.query.orders.findFirst({
+        where(fields, { eq, and }) {
+          return and(
+            eq(fields.id, orderId),
+            eq(fields.restaurantId, restaurantId),
+          )
+        },
       })
-      .where(eq(orders.id, orderId))
 
-    set.status = 204
-  },
-  {
-    params: t.Object({
-      id: t.String(),
-    }),
-  },
-)
+      if (!order) {
+        throw new UnauthorizedError()
+      }
+
+      if (order.status !== 'delivering') {
+        return reply.status(400).send({
+          message: 'O pedido já foi entregue.',
+        })
+      }
+
+      await db
+        .update(orders)
+        .set({ status: 'delivered' })
+        .where(eq(orders.id, orderId))
+
+      return reply.status(204).send()
+    }
+  )
+}

@@ -1,49 +1,55 @@
-import { t, Elysia } from 'elysia'
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import dayjs from 'dayjs'
-import { authentication } from '../authentication'
+import { z } from 'zod'
 import { db } from '@/db/connection'
 import { authLinks } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { UnauthorizedError } from './errors/unauthorized-error'
 
-export const authenticateFromLink = new Elysia().use(authentication).get(
-  '/auth-links/authenticate',
-  async ({ signUser, query, set }) => {
-    const { code, redirect } = query
-
-    const authLinkFromCode = await db.query.authLinks.findFirst({
-      where(fields, { eq }) {
-        return eq(fields.code, code)
+export async function authenticateFromLink(app: FastifyInstance) {
+  app.get(
+    '/auth-links/authenticate',
+    {
+      schema: {
+        querystring: z
+          .object({
+            code: z.string(),
+            redirect: z.string(),
+          })
+          .strict(),
       },
-    })
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { code, redirect } = request.query as { code: string; redirect: string }
 
-    if (!authLinkFromCode) {
-      throw new UnauthorizedError()
+      const authLinkFromCode = await db.query.authLinks.findFirst({
+        where(fields, { eq }) {
+          return eq(fields.code, code)
+        },
+      })
+
+      if (!authLinkFromCode) {
+        throw new UnauthorizedError()
+      }
+
+      if (dayjs().diff(authLinkFromCode.createdAt, 'days') > 7) { //7 days
+        throw new UnauthorizedError()
+      }
+
+      const managedRestaurant = await db.query.restaurants.findFirst({
+        where(fields, { eq }) {
+          return eq(fields.managerId, authLinkFromCode.userId)
+        },
+      })
+
+      await request.signUser({
+        sub: authLinkFromCode.userId,
+        restaurantId: managedRestaurant?.id,
+      })
+
+      await db.delete(authLinks).where(eq(authLinks.code, code))
+
+      return reply.redirect(redirect)
     }
-
-    if (dayjs().diff(authLinkFromCode.createdAt, 'days') > 7) {
-      throw new UnauthorizedError()
-    }
-
-    const managedRestaurant = await db.query.restaurants.findFirst({
-      where(fields, { eq }) {
-        return eq(fields.managerId, authLinkFromCode.userId)
-      },
-    })
-
-    await signUser({
-      sub: authLinkFromCode.userId,
-      restaurantId: managedRestaurant?.id,
-    })
-
-    await db.delete(authLinks).where(eq(authLinks.code, code))
-
-    set.redirect = redirect
-  },
-  {
-    query: t.Object({
-      code: t.String(),
-      redirect: t.String(),
-    }),
-  },
-)
+  )
+}

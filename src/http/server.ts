@@ -1,13 +1,12 @@
 import 'dotenv/config'
 
-import { Elysia } from 'elysia'
-import { cors } from '@elysiajs/cors'
+import Fastify from 'fastify'
+import cors from '@fastify/cors'
+import fastifyJwt from '@fastify/jwt'
+import { FastifyReply, FastifyRequest } from 'fastify'
+import type { ZodTypeProvider } from 'fastify-type-provider-zod'
 
-type OnErrorContext = {
-  code: string
-  error: any
-  set: { status: number }
-}
+import authentication from './authentication'
 
 import { registerRestaurant } from './routes/register-restaurant'
 import { registerCustomer } from './routes/register-customer'
@@ -20,7 +19,6 @@ import { createEvaluation } from './routes/create-evaluation'
 import { getEvaluations } from './routes/get-evaluations'
 import { updateMenu } from './routes/update-menu'
 import { updateProfile } from './routes/update-profile'
-import { authentication } from './authentication'
 import { getProfile } from './routes/get-profile'
 import { authenticateFromLink } from './routes/authenticate-from-link'
 import { getManagedRestaurant } from './routes/get-managed-restaurant'
@@ -35,60 +33,78 @@ import { getPopularProducts } from './routes/get-popular-products'
 import { dispatchOrder } from './routes/dispatch-order'
 import { deliverOrder } from './routes/deliver-order'
 
-const app = new Elysia()
-  .use(
-    cors({
-      credentials: true,
-      allowedHeaders: ['content-type'],
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'],
-      origin: (request): boolean => {
-        const origin = request.headers.get('origin')
-        if (!origin) return false
-        return true
-      },
-    }),
-  )
-  .use(authentication)
-  .use(signOut)
-  .use(getProfile)
-  .use(getManagedRestaurant)
-  .use(registerRestaurant)
-  .use(registerCustomer)
-  .use(sendAuthenticationLink)
-  .use(authenticateFromLink)
-  .use(createOrder)
-  .use(approveOrder)
-  .use(cancelOrder)
-  .use(dispatchOrder)
-  .use(deliverOrder)
-  .use(getOrders)
-  .use(getOrderDetails)
-  .use(createEvaluation)
-  .use(getEvaluations)
-  .use(updateMenu)
-  .use(updateProfile)
-  .use(getMonthReceipt)
-  .use(getMonthOrdersAmount)
-  .use(getDayOrdersAmount)
-  .use(getMonthCanceledOrdersAmount)
-  .use(getDailyReceiptInPeriod)
-  .use(getPopularProducts)
-  app.onError(({ code, error, set }: OnErrorContext) => {
-  switch (code) {
-    case 'VALIDATION': {
-      set.status = error.status
-      return error.toResponse()
-    }
-    case 'NOT_FOUND': {
-      return new Response(null, { status: 404 })
-    }
-    default: {
-      console.error(error)
-      return new Response(null, { status: 500 })
-    }
+const app = Fastify({
+  logger: true,
+}).withTypeProvider<ZodTypeProvider>()
+
+await app.register(authentication)
+
+await app.register(cors, {
+  credentials: true,
+  origin: (origin, cb) => {
+    cb(null, true)
+  },
+})
+
+app.register(fastifyJwt, {
+  secret: process.env.JWT_SECRET!,
+  cookie: {
+    cookieName: 'token',
+    signed: false,
+  },
+})
+
+app.decorate('authenticate', async function (
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  try {
+    await request.jwtVerify()
+  } catch (err) {
+    reply.status(401).send({ message: 'Unauthorized' })
   }
 })
 
-app.listen(3333)
+app.register(approveOrder)
+app.register(authenticateFromLink)
+app.register(cancelOrder)
+app.register(createEvaluation)
+app.register(createOrder)
+app.register(deliverOrder)
+app.register(dispatchOrder)
+app.register(getDailyReceiptInPeriod)
+app.register(getDayOrdersAmount)
+app.register(getEvaluations)
+app.register(getManagedRestaurant)
+app.register(getMonthCanceledOrdersAmount)
+app.register(getMonthOrdersAmount)
+app.register(getMonthReceipt)
+app.register(getOrderDetails)
+app.register(getOrders)
+app.register(getPopularProducts)
+app.register(getProfile)
+app.register(registerCustomer)
+app.register(registerRestaurant)
+app.register(sendAuthenticationLink)
+app.register(signOut)
+app.register(updateMenu)
+app.register(updateProfile)
 
-console.log(`🔥 HTTP server running at ${app.server?.hostname}:${app.server?.port}`)
+  app.setErrorHandler((error, request, reply) => {
+    if (error.validation) {
+      reply.status(400).send({ message: 'Validation error', details: error.validation })
+    } else if (error.code === 'FST_ERR_NOT_FOUND') {
+      reply.status(404).send({ message: 'Not Found' })
+    } else {
+      request.log.error(error)
+      reply.status(500).send({ message: 'Internal Server Error' })
+    }
+  })
+
+try {
+  const address = await app.listen({ port: 3333, host: '0.0.0.0' })
+  console.log(`🔥 HTTP server running at ${address}`)
+} catch (err) {
+  app.log.error(err)
+  process.exit(1)
+}

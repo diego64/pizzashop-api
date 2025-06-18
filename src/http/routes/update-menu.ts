@@ -1,51 +1,68 @@
-import Elysia, { Static, t } from 'elysia'
-import { authentication } from '../authentication'
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import { z } from 'zod'
 import { db } from '@/db/connection'
 import { products } from '@/db/schema'
 import { and, eq, inArray } from 'drizzle-orm'
+import { UnauthorizedError } from './errors/unauthorized-error'
+//import type { JwtPayload } from '@/http/authentication'
 
-const productSchema = t.Object({
-  id: t.Optional(t.String()),
-  name: t.String(),
-  description: t.Optional(t.String()),
-  price: t.Number({ minimum: 0 }),
+const productSchema = z.object({
+  id: z.string().optional(),
+  name: z.string(),
+  description: z.string().optional(),
+  price: z.number().min(0),
 })
 
-export const updateMenu = new Elysia().use(authentication).put(
-  '/menu',
-  async ({ getManagedRestaurantId, set, body }) => {
-    const restaurantId = await getManagedRestaurantId()
+const bodySchema = z.object({
+  products: z.object({
+    newOrUpdatedProducts: z.array(productSchema),
+    deletedProductIds: z.array(z.string()),
+  }),
+})
 
-    const {
-      products: { deletedProductIds, newOrUpdatedProducts },
-    } = body
+type Product = z.infer<typeof productSchema>
+type ProductWithId = Required<Product>
+type ProductWithoutId = Omit<Product, 'id'>
 
-    if (deletedProductIds.length > 0) {
-      await db
-        .delete(products)
-        .where(
-          and(
-            inArray(products.id, deletedProductIds),
-            eq(products.restaurantId, restaurantId),
-          ),
-        )
+interface RequestWithManager extends FastifyRequest {
+  getManagedRestaurantId: () => Promise<string> //user validation along with verification that the user is the owner of the restaurant
+}
+
+export async function updateMenu(app: FastifyInstance) {
+  app.put('/menu', {
+    preHandler: [app.authenticate],
+    schema: {
+      body: bodySchema,
+      response: {
+        204: { type: 'null' },
+      },
+    },
+  }, async (request: RequestWithManager, reply: FastifyReply) => {
+    const { products: { newOrUpdatedProducts, deletedProductIds } } = bodySchema.parse(request.body)
+
+    const restaurantId = await request.getManagedRestaurantId()
+
+    if (!restaurantId) {
+      throw new UnauthorizedError('User is not a restaurant manager.')
     }
 
-    type Product = Static<typeof productSchema>
-    type ProductWithId = Required<Product>
-    type ProductWithoutId = Omit<Product, 'id'>
+    if (deletedProductIds.length > 0) {
+      await db.delete(products).where(
+        and(
+          inArray(products.id, deletedProductIds),
+          eq(products.restaurantId, restaurantId)
+        )
+      )
+    }
 
     const updatedProducts = newOrUpdatedProducts.filter(
-      (product): product is ProductWithId => {
-        return !!product.id
-      },
+      (product): product is ProductWithId => !!product.id
     )
 
     if (updatedProducts.length > 0) {
       await Promise.all(
-        updatedProducts.map((product) => {
-          return db
-            .update(products)
+        updatedProducts.map((product) =>
+          db.update(products)
             .set({
               name: product.name,
               description: product.description,
@@ -54,40 +71,28 @@ export const updateMenu = new Elysia().use(authentication).put(
             .where(
               and(
                 eq(products.id, product.id),
-                eq(products.restaurantId, restaurantId),
-              ),
+                eq(products.restaurantId, restaurantId)
+              )
             )
-        }),
+        )
       )
     }
 
     const newProducts = newOrUpdatedProducts.filter(
-      (product): product is ProductWithoutId => {
-        return !product.id
-      },
+      (product): product is ProductWithoutId => !product.id
     )
 
-    if (newProducts.length) {
+    if (newProducts.length > 0) {
       await db.insert(products).values(
-        newProducts.map((product) => {
-          return {
-            name: product.name,
-            description: product.description,
-            priceInCents: product.price * 100,
-            restaurantId,
-          }
-        }),
+        newProducts.map((product) => ({
+          name: product.name,
+          description: product.description,
+          priceInCents: product.price * 100,
+          restaurantId,
+        }))
       )
     }
 
-    set.status = 204
-  },
-  {
-    body: t.Object({
-      products: t.Object({
-        newOrUpdatedProducts: t.Array(productSchema),
-        deletedProductIds: t.Array(t.String()),
-      }),
-    }),
-  },
-)
+    return reply.status(204).send()
+  })
+}

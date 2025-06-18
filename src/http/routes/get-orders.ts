@@ -1,20 +1,87 @@
-import { t, Elysia } from 'elysia'
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { orders, users } from '@/db/schema'
 import { db } from '@/db/connection'
 import { eq, and, ilike, desc, count, sql } from 'drizzle-orm'
-import { createSelectSchema } from 'drizzle-typebox'
-import { authentication } from '../authentication'
+import { z } from 'zod'
+import { UnauthorizedError } from './errors/unauthorized-error'
+import type { JwtPayload } from '@/http/authentication'
 
-export const getOrders = new Elysia().use(authentication).get(
-  '/orders',
-  async ({ query, getCurrentUser, set }) => {
-    const { pageIndex, orderId, customerName, status } = query
-    const { restaurantId } = await getCurrentUser()
+const querySchema = z.object({
+  customerName: z.string().optional(),
+  orderId: z.string().optional(),
+  status: z.enum(['pending', 'processing', 'delivering', 'delivered', 'canceled']).optional(),
+  pageIndex: z.number().min(0),
+})
+
+type Query = z.infer<typeof querySchema>
+
+interface RequestWithUser extends FastifyRequest {
+  getCurrentUser: () => Promise<JwtPayload>
+}
+
+export async function getOrders(app: FastifyInstance) {
+  app.get('/orders', {
+    preHandler: [app.authenticate],
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          customerName: { type: 'string' },
+          orderId: { type: 'string' },
+          status: { 
+            type: 'string', 
+            enum: ['pending', 'processing', 'delivering', 'delivered', 'canceled'] 
+          },
+          pageIndex: { type: 'number', minimum: 0 },
+        },
+        required: ['pageIndex'],
+        additionalProperties: false,
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            orders: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  orderId: { type: 'string' },
+                  createdAt: { type: 'string' },
+                  status: { type: 'string' },
+                  customerName: { type: 'string' },
+                  total: { type: 'number' },
+                },
+                required: ['orderId', 'createdAt', 'status', 'customerName', 'total'],
+              },
+            },
+            meta: {
+              type: 'object',
+              properties: {
+                pageIndex: { type: 'number' },
+                perPage: { type: 'number' },
+                totalCount: { type: 'number' },
+              },
+              required: ['pageIndex', 'perPage', 'totalCount'],
+            },
+          },
+          required: ['orders', 'meta'],
+        },
+      },
+    },
+  }, async (request: RequestWithUser, reply: FastifyReply) => {
+    const parsedQuery = querySchema.safeParse(request.query)
+    if (!parsedQuery.success) {
+      return reply.status(400).send({ error: 'Invalid query parameters' })
+    }
+
+    const { pageIndex, orderId, customerName, status } = parsedQuery.data
+
+    const { restaurantId } = await request.getCurrentUser()
 
     if (!restaurantId) {
-      set.status = 401
-
-      throw new Error('User is not a restaurant manager.')
+      reply.status(401)
+      throw new UnauthorizedError('User is not a restaurant manager.')
     }
 
     const baseQuery = db
@@ -43,20 +110,18 @@ export const getOrders = new Elysia().use(authentication).get(
     const allOrders = await baseQuery
       .offset(pageIndex * 10)
       .limit(10)
-      .orderBy((fields) => {
-        return [
-          sql`CASE ${fields.status} 
-            WHEN 'pending' THEN 1
-            WHEN 'processing' THEN 2
-            WHEN 'delivering' THEN 3
-            WHEN 'delivered' THEN 4
-            WHEN 'canceled' THEN 99
-          END`,
-          desc(fields.createdAt),
-        ]
-      })
+      .orderBy((fields) => [
+        sql`CASE ${fields.status} 
+          WHEN 'pending' THEN 1
+          WHEN 'processing' THEN 2
+          WHEN 'delivering' THEN 3
+          WHEN 'delivered' THEN 4
+          WHEN 'canceled' THEN 99
+        END`,
+        desc(fields.createdAt),
+      ])
 
-    const result = {
+    return {
       orders: allOrders,
       meta: {
         pageIndex,
@@ -64,15 +129,5 @@ export const getOrders = new Elysia().use(authentication).get(
         totalCount: ordersCount.count,
       },
     }
-
-    return result
-  },
-  {
-    query: t.Object({
-      customerName: t.Optional(t.String()),
-      orderId: t.Optional(t.String()),
-      status: t.Optional(createSelectSchema(orders).properties.status),
-      pageIndex: t.Numeric({ minimum: 0 }),
-    }),
-  },
-)
+  })
+}

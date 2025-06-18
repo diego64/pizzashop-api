@@ -1,37 +1,36 @@
-import { restaurants, users } from '@/db/schema'
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { z } from 'zod'
 import { db } from '@/db/connection'
-import { t, Elysia } from 'elysia'
+import { restaurants, users } from '@/db/schema'
 
-export function registerRestaurant(app: Elysia) {
-  app.post(
-    '/restaurants',
-    async ({ body, set }) => {
-      const { restaurantName, managerName, email, phone } = body
+const registerRestaurantBodySchema = z.object({
+  restaurantName: z.string(),
+  managerName: z.string(),
+  phone: z.string(),
+  email: z.string().email(),
+})
 
-      const [manager] = await db
-        .insert(users)
-        .values({
-          name: managerName,
-          email,
-          phone,
-          role: 'manager',
-        })
-        .returning()
+type RegisterRestaurantBody = z.infer<typeof registerRestaurantBodySchema>
 
-      await db.insert(restaurants).values({
-        name: restaurantName,
-        managerId: manager.id,
+export async function registerRestaurant(app: FastifyInstance) {
+  app.post('/restaurants', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { restaurantName, managerName, phone, email } = registerRestaurantBodySchema.parse(request.body)
+
+    const [manager] = await db
+      .insert(users)
+      .values({
+        name: managerName,
+        email,
+        phone,
+        role: 'manager',
       })
+      .returning()
 
-      set.status = 204
-    },
-    {
-      body: t.Object({
-        restaurantName: t.String(),
-        managerName: t.String(),
-        phone: t.String(),
-        email: t.String({ format: 'email' }),
-      }),
-    },
-  )
+    await db.insert(restaurants).values({
+      name: restaurantName,
+      managerId: manager.id,
+    })
+
+    reply.status(204).send()
+  })
 }

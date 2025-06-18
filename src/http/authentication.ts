@@ -1,66 +1,89 @@
-import { Elysia, t, type Static } from 'elysia'
-import { cookie } from '@elysiajs/cookie'
-import jwt from '@elysiajs/jwt'
+import fp from 'fastify-plugin'
+import fastifyJwt, { JWT } from '@fastify/jwt'
+import fastifyCookie from '@fastify/cookie'
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { env } from '@/env'
 import { UnauthorizedError } from './routes/errors/unauthorized-error'
 import { NotAManagerError } from './routes/errors/not-a-manager-error'
 
-const jwtPayloadSchema = t.Object({
-  sub: t.String(),
-  restaurantId: t.Optional(t.String()),
-})
+export interface JwtPayload {
+  sub: string
+  restaurantId?: string
+}
 
-export const authentication = new Elysia()
-  .error({
-    UNAUTHORIZED: UnauthorizedError,
-    NOT_A_MANAGER: NotAManagerError,
-  })
-  .onError(({ code, error, set }) => {
-    if (code === 'UNAUTHORIZED' || code === 'NOT_A_MANAGER') {
-      set.status = 401
-      return { code, message: error.message }
-    }
-
-    set.status = 500
-    return { code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected error' }
-  })
-  .use(
-    jwt({
-      name: 'jwt',
-      secret: env.JWT_SECRET_KEY,
-      schema: jwtPayloadSchema,
-    })
-  )
-  .use(cookie())
-  .derive((ctx: any) => {
-  const { jwt, cookie, setCookie, removeCookie } = ctx
-
-  return {
-    getCurrentUser: async () => {
-      const payload = await jwt.verify(cookie.auth)
-      if (!payload) throw new UnauthorizedError()
-      return payload
-    },
-    signUser: async (payload: Static<typeof jwtPayloadSchema>) => {
-      setCookie('auth', await jwt.sign(payload), {
-        httpOnly: true,
-        maxAge: 7 * 86400, // 7 days
-        path: '/',
-      })
-    },
-    signOut: () => {
-      removeCookie('auth')
-    },
+declare module 'fastify' {
+  interface FastifyRequest {
+    jwt: JWT
+    getCurrentUser: () => Promise<JwtPayload>
+    getManagedRestaurantId: () => Promise<string>
   }
-})
-  .derive((ctx: any) => {
-  const { getCurrentUser } = ctx
 
-  return {
-    getManagedRestaurantId: async () => {
-      const { restaurantId } = await getCurrentUser()
-      if (!restaurantId) throw new NotAManagerError()
-      return restaurantId
+  interface FastifyInstance {
+    authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>
+    signUser: (reply: FastifyReply, payload: JwtPayload) => Promise<void>
+  }
+}
+
+export default fp(async (app: FastifyInstance) => {
+  await app.register(fastifyCookie)
+  await app.register(fastifyJwt, {
+    secret: env.JWT_SECRET,
+    cookie: {
+      cookieName: 'auth',
+      signed: false,
     },
+  })
+
+  if (!app.hasRequestDecorator('getCurrentUser')) {
+    app.decorateRequest('getCurrentUser', async function () {
+      try {
+        const payload = await this.jwtVerify<JwtPayload>()
+
+        if (!payload.sub) {
+          throw new UnauthorizedError()
+        }
+
+        return payload
+      } catch {
+        throw new UnauthorizedError()
+      }
+    })
+  }
+
+  if (!app.hasRequestDecorator('getManagedRestaurantId')) {
+    app.decorateRequest('getManagedRestaurantId', async function () {
+      const user = await this.getCurrentUser()
+
+      if (!user.restaurantId) {
+        throw new NotAManagerError()
+      }
+
+      return user.restaurantId
+    })
+  }
+
+  if (!app.hasDecorator('authenticate')) {
+    app.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        await request.getCurrentUser()
+      } catch {
+        return reply.status(401).send({
+          code: 'UNAUTHORIZED',
+          message: 'Unauthorized',
+        })
+      }
+    })
+  }
+
+  if (!app.hasDecorator('signUser')) {
+    app.decorate('signUser', async (reply: FastifyReply, payload: JwtPayload) => {
+      const token = await app.jwt.sign(payload)
+
+      reply.setCookie('auth', token, {
+        httpOnly: true,
+        path: '/',
+        maxAge: 7 * 24 * 60 * 60, // 7 days
+      })
+    })
   }
 })

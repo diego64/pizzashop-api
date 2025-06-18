@@ -1,21 +1,34 @@
-import Elysia from 'elysia'
-import { authentication } from '../authentication'
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { db } from '@/db/connection'
 
-export const getManagedRestaurant = new Elysia()
-  .use(authentication)
-  .get('/managed-restaurant', async ({ getManagedRestaurantId }) => {
-    const restaurantId = await getManagedRestaurantId()
+interface RequestWithManagedRestaurant extends FastifyRequest {
+  getManagedRestaurantId: () => Promise<string>
+}
 
-    const restaurant = await db.query.restaurants.findFirst({
-      where(fields, { eq }) {
-        return eq(fields.id, restaurantId)
-      },
-    })
+export async function getManagedRestaurant(app: FastifyInstance) {
+  app.get(
+    '/managed-restaurant',
+    {
+      preHandler: [app.authenticate],
+    },
+    async (request: RequestWithManagedRestaurant, reply: FastifyReply) => {
+      try {
+        const restaurantId = await request.getManagedRestaurantId()
 
-    if (!restaurant) {
-      throw new Error('Restaurant not found.')
+        const restaurant = await db.query.restaurants.findFirst({
+          where(fields, { eq }) {
+            return eq(fields.id, restaurantId)
+          },
+        })
+
+        if (!restaurant) {
+          return reply.status(404).send({ error: 'Restaurant not found.' })
+        }
+
+        return reply.send(restaurant)
+      } catch (error) {
+        return reply.status(500).send({ error: error instanceof Error ? error.message : 'Internal Server Error' })
+      }
     }
-
-    return restaurant
-  })
+  )
+}

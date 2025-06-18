@@ -1,13 +1,27 @@
-import Elysia from 'elysia'
-import { authentication } from '../authentication'
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { and, count, eq } from 'drizzle-orm'
 import { db } from '@/db/connection'
 import { orderItems, orders, products } from '@/db/schema'
+import { UnauthorizedError } from './errors/unauthorized-error'
 
-export const getPopularProducts = new Elysia()
-  .use(authentication)
-  .get('/metrics/popular-products', async ({ getManagedRestaurantId }) => {
-    const restaurantId = await getManagedRestaurantId()
+interface RequestWithUser extends FastifyRequest {
+  getManagedRestaurantId: () => Promise<string>
+}
+
+export async function getPopularProducts(app: FastifyInstance) {
+  app.get('/metrics/popular-products', {
+    preHandler: [app.authenticate],
+    onSend: async (request, reply, payload) => {
+      reply.header('X-Powered-By', 'Fastify')
+      reply.header('Cache-Control', 'no-cache')
+      return payload
+    },
+  }, async (request: RequestWithUser, reply: FastifyReply) => {
+    const restaurantId = await request.getManagedRestaurantId()
+
+    if (!restaurantId) {
+      throw new UnauthorizedError('User is not authorized to access this resource.')
+    }
 
     try {
       const popularProducts = await db
@@ -24,6 +38,11 @@ export const getPopularProducts = new Elysia()
 
       return popularProducts
     } catch (err) {
-      console.log(err)
+      console.error(err)
+      reply.status(500)
+      return {
+        message: 'An error occurred while fetching popular products.',
+      }
     }
   })
+}
