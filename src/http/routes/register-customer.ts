@@ -1,6 +1,6 @@
+import { Elysia } from 'elysia'
 import { users } from '@/db/schema'
 import { db } from '@/db/connection'
-import Elysia from 'elysia'
 import { z } from 'zod'
 
 const registerCustomerBodySchema = z.object({
@@ -20,6 +20,6 @@ export const registerCustomer = new Elysia().post(
       phone,
     })
 
-    set.status = 401
+    set.status = 201
   },
 )

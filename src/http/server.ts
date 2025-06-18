@@ -1,5 +1,13 @@
+import 'dotenv/config'
+
 import { Elysia } from 'elysia'
 import { cors } from '@elysiajs/cors'
+
+type OnErrorContext = {
+  code: string
+  error: any
+  set: { status: number }
+}
 
 import { registerRestaurant } from './routes/register-restaurant'
 import { registerCustomer } from './routes/register-customer'
@@ -35,11 +43,7 @@ const app = new Elysia()
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'],
       origin: (request): boolean => {
         const origin = request.headers.get('origin')
-
-        if (!origin) {
-          return false
-        }
-
+        if (!origin) return false
         return true
       },
     }),
@@ -69,26 +73,22 @@ const app = new Elysia()
   .use(getMonthCanceledOrdersAmount)
   .use(getDailyReceiptInPeriod)
   .use(getPopularProducts)
-  .onError(({ code, error, set }) => {
-    switch (code) {
-      case 'VALIDATION': {
-        set.status = error.status
-
-        return error.toResponse()
-      }
-      case 'NOT_FOUND': {
-        return new Response(null, { status: 404 })
-      }
-      default: {
-        console.error(error)
-
-        return new Response(null, { status: 500 })
-      }
+  app.onError(({ code, error, set }: OnErrorContext) => {
+  switch (code) {
+    case 'VALIDATION': {
+      set.status = error.status
+      return error.toResponse()
     }
-  })
+    case 'NOT_FOUND': {
+      return new Response(null, { status: 404 })
+    }
+    default: {
+      console.error(error)
+      return new Response(null, { status: 500 })
+    }
+  }
+})
 
 app.listen(3333)
 
-console.log(
-  `🔥 HTTP server running at ${app.server?.hostname}:${app.server?.port}`,
-)
+console.log(`🔥 HTTP server running at ${app.server?.hostname}:${app.server?.port}`)

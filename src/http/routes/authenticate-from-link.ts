@@ -1,4 +1,4 @@
-import Elysia, { t } from 'elysia'
+import { t, Elysia } from 'elysia'
 import dayjs from 'dayjs'
 import { authentication } from '../authentication'
 import { db } from '@/db/connection'

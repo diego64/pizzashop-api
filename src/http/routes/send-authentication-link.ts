@@ -1,4 +1,4 @@
-import Elysia, { t } from 'elysia'
+import { t, Elysia } from 'elysia'
 import { db } from '@/db/connection'
 import { authLinks } from '@/db/schema'
 import { createId } from '@paralleldrive/cuid2'

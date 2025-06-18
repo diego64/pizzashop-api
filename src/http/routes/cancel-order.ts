@@ -1,4 +1,4 @@
-import Elysia, { t } from 'elysia'
+import { t, Elysia } from 'elysia'
 import { authentication } from '../authentication'
 import { db } from '@/db/connection'
 import { orders } from '@/db/schema'

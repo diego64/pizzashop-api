@@ -1,5 +1,5 @@
 import { db } from '@/db/connection'
-import Elysia, { t } from 'elysia'
+import { t, Elysia } from 'elysia'
 import { z } from 'zod'
 import { authentication } from '../authentication'
 
