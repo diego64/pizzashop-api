@@ -31,6 +31,7 @@ import { getDailyReceiptInPeriod } from './routes/get-daily-receipt-in-period'
 import { getPopularProducts } from './routes/get-popular-products'
 import { dispatchOrder } from './routes/dispatch-order'
 import { deliverOrder } from './routes/deliver-order'
+import { checkDatabaseConnection } from '@/utils/check-database-connection'
 
 const app = Fastify({
   logger: {
@@ -95,6 +96,8 @@ app.setErrorHandler((error, request, reply) => {
     reply.status(500).send({ message: 'Internal Server Error' })
   }
 })
+
+await checkDatabaseConnection()
 
 try {
   const address = await app.listen({ port: 3333, host: '0.0.0.0' })
