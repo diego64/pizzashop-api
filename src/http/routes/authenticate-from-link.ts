@@ -1,6 +1,5 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import dayjs from 'dayjs'
-import { z } from 'zod'
 import { db } from '@/db/connection'
 import { authLinks } from '@/db/schema'
 import { eq } from 'drizzle-orm'
@@ -11,12 +10,15 @@ export async function authenticateFromLink(app: FastifyInstance) {
     '/auth-links/authenticate',
     {
       schema: {
-        querystring: z
-          .object({
-            code: z.string(),
-            redirect: z.string(),
-          })
-          .strict(),
+        querystring: {
+          type: 'object',
+          properties: {
+            code: { type: 'string' },
+            redirect: { type: 'string' },
+          },
+          required: ['code', 'redirect'],
+          additionalProperties: false,
+        },
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -32,7 +34,7 @@ export async function authenticateFromLink(app: FastifyInstance) {
         throw new UnauthorizedError()
       }
 
-      if (dayjs().diff(authLinkFromCode.createdAt, 'days') > 7) { //7 days
+      if (dayjs().diff(authLinkFromCode.createdAt, 'days') > 7) {
         throw new UnauthorizedError()
       }
 

@@ -3,22 +3,21 @@ import { z } from 'zod'
 
 import { db } from '@/db/connection'
 import { orders } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
 import { UnauthorizedError } from './errors/unauthorized-error'
+
+const paramsSchema = z.object({
+  id: z.string(),
+})
 
 export async function cancelOrder(app: FastifyInstance) {
   app.patch(
     '/orders/:id/cancel',
     {
       preHandler: [app.authenticate],
-      schema: {
-        params: z.object({
-          id: z.string(),
-        }),
-      },
     },
     async (request, reply) => {
-      const { id: orderId } = request.params as { id: string }
+      const { id: orderId } = request.params as z.infer<typeof paramsSchema>
 
       const { restaurantId } = await request.getCurrentUser()
 

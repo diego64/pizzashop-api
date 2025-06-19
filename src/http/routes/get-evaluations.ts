@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { z } from 'zod'
+import { zodToJsonSchema } from 'zod-to-json-schema'
 import { db } from '@/db/connection'
 import { JwtPayload } from '@/http/authentication'
 
@@ -19,7 +20,7 @@ export async function getEvaluations(app: FastifyInstance) {
     {
       preHandler: [app.authenticate],
       schema: {
-        querystring: querySchema,
+        querystring: zodToJsonSchema(querySchema, 'querySchema'),
       },
     },
     async (request: RequestWithCurrentUser, reply: FastifyReply) => {

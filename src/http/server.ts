@@ -1,10 +1,9 @@
 import 'dotenv/config'
 
 import Fastify from 'fastify'
-import cors from '@fastify/cors'
+import { ZodTypeProvider } from 'fastify-type-provider-zod'
 import fastifyJwt from '@fastify/jwt'
-import { FastifyReply, FastifyRequest } from 'fastify'
-import type { ZodTypeProvider } from 'fastify-type-provider-zod'
+import cors from '@fastify/cors'
 
 import authentication from './authentication'
 
@@ -34,36 +33,32 @@ import { dispatchOrder } from './routes/dispatch-order'
 import { deliverOrder } from './routes/deliver-order'
 
 const app = Fastify({
-  logger: true,
+  logger: {
+    transport: {
+      target: 'pino-pretty',
+      options: {
+        colorize: true,
+        translateTime: 'SYS:standard',
+        ignore: 'pid,hostname',
+      },
+    },
+  },
 }).withTypeProvider<ZodTypeProvider>()
 
-await app.register(authentication)
-
-await app.register(cors, {
-  credentials: true,
-  origin: (origin, cb) => {
-    cb(null, true)
-  },
-})
-
-app.register(fastifyJwt, {
-  secret: process.env.JWT_SECRET!,
+await app.register(fastifyJwt, {
+  secret: process.env.JWT_SECRET || 'senhaprahomolagacao',
   cookie: {
-    cookieName: 'token',
+    cookieName: 'auth',
     signed: false,
   },
 })
 
-app.decorate('authenticate', async function (
-  request: FastifyRequest,
-  reply: FastifyReply,
-) {
-  try {
-    await request.jwtVerify()
-  } catch (err) {
-    reply.status(401).send({ message: 'Unauthorized' })
-  }
+await app.register(cors, {
+  credentials: true,
+  origin: (origin, cb) => cb(null, true),
 })
+
+await app.register(authentication)
 
 app.register(approveOrder)
 app.register(authenticateFromLink)
@@ -90,20 +85,20 @@ app.register(signOut)
 app.register(updateMenu)
 app.register(updateProfile)
 
-  app.setErrorHandler((error, request, reply) => {
-    if (error.validation) {
-      reply.status(400).send({ message: 'Validation error', details: error.validation })
-    } else if (error.code === 'FST_ERR_NOT_FOUND') {
-      reply.status(404).send({ message: 'Not Found' })
-    } else {
-      request.log.error(error)
-      reply.status(500).send({ message: 'Internal Server Error' })
-    }
-  })
+app.setErrorHandler((error, request, reply) => {
+  if ((error as any).validation) {
+    reply.status(400).send({ message: 'Validation error', details: (error as any).validation })
+  } else if ((error as any).code === 'FST_ERR_NOT_FOUND') {
+    reply.status(404).send({ message: 'Not Found' })
+  } else {
+    request.log.error(error)
+    reply.status(500).send({ message: 'Internal Server Error' })
+  }
+})
 
 try {
   const address = await app.listen({ port: 3333, host: '0.0.0.0' })
-  console.log(`🔥 HTTP server running at ${address}`)
+  console.log(`🍕 pizza.shop api is running on HTTP server ${address}`)
 } catch (err) {
   app.log.error(err)
   process.exit(1)

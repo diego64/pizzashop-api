@@ -13,7 +13,7 @@ interface RequestWithUser extends FastifyRequest {
 
 export async function getProfile(app: FastifyInstance) {
   app.get('/me', {
-    preHandler: [app.authenticate], // Usando o decorator authenticate para proteger rota
+    preHandler: [app.authenticate],
   }, async (request: RequestWithUser, reply: FastifyReply) => {
     const { sub: userId } = await request.getCurrentUser()
 

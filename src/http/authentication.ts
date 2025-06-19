@@ -1,6 +1,6 @@
 import fp from 'fastify-plugin'
-import fastifyJwt, { JWT } from '@fastify/jwt'
-import fastifyCookie from '@fastify/cookie'
+import fastifyJwt, { JWT } from '@fastify/jwt'  // <- só import para tipagem, pode ficar aqui
+import type { FastifyCookieOptions } from '@fastify/cookie'
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { env } from '@/env'
 import { UnauthorizedError } from './routes/errors/unauthorized-error'
@@ -13,7 +13,7 @@ export interface JwtPayload {
 
 declare module 'fastify' {
   interface FastifyRequest {
-    jwt: JWT
+    jwt: JWT  // <-- tipagem aqui
     getCurrentUser: () => Promise<JwtPayload>
     getManagedRestaurantId: () => Promise<string>
   }
@@ -25,14 +25,7 @@ declare module 'fastify' {
 }
 
 export default fp(async (app: FastifyInstance) => {
-  await app.register(fastifyCookie)
-  await app.register(fastifyJwt, {
-    secret: env.JWT_SECRET,
-    cookie: {
-      cookieName: 'auth',
-      signed: false,
-    },
-  })
+  // NÃO REGISTRE O fastifyJwt NEM fastifyCookie AQUI — registre no server.ts
 
   if (!app.hasRequestDecorator('getCurrentUser')) {
     app.decorateRequest('getCurrentUser', async function () {

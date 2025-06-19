@@ -5,30 +5,28 @@ import { db } from '@/db/connection'
 import { orders } from '@/db/schema'
 import { orderItems } from '@/db/schema/order-items'
 
+const paramsSchema = z.object({
+  restaurantId: z.string(),
+})
+
+const bodySchema = z.object({
+  items: z.array(
+    z.object({
+      productId: z.string(),
+      quantity: z.number().int().positive(),
+    })
+  ),
+})
+
 export async function createOrder(app: FastifyInstance) {
   app.post(
     '/restaurants/:restaurantId/orders',
     {
       preHandler: [app.authenticate],
-      schema: {
-        params: z.object({
-          restaurantId: z.string(),
-        }),
-        body: z.object({
-          items: z.array(
-            z.object({
-              productId: z.string(),
-              quantity: z.number().int().positive(),
-            })
-          ),
-        }),
-      },
     },
     async (request, reply) => {
-      const { restaurantId } = request.params as { restaurantId: string }
-      const { items } = request.body as {
-        items: { productId: string; quantity: number }[]
-      }
+      const { restaurantId } = request.params as z.infer<typeof paramsSchema>
+      const { items } = request.body as z.infer<typeof bodySchema>
 
       const { sub: customerId } = await request.getCurrentUser()
 

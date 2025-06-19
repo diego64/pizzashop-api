@@ -17,16 +17,18 @@ export async function getDailyReceiptInPeriod(app: FastifyInstance) {
     '/metrics/daily-receipt-in-period',
     {
       preHandler: [app.authenticate],
-      schema: {
-        querystring: querySchema,
-      },
     },
     async (
       request: FastifyRequest,
       reply: FastifyReply,
     ) => {
+      const parseResult = querySchema.safeParse(request.query)
+      if (!parseResult.success) {
+        return reply.status(400).send({ message: 'Invalid query parameters' })
+      }
+      const { from, to } = parseResult.data
+
       const restaurantId = await request.getManagedRestaurantId()
-      const { from, to } = request.query as Query
 
       const startDate = from ? dayjs(from) : dayjs().subtract(7, 'days')
       const endDate = to

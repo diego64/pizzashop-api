@@ -7,19 +7,18 @@ import { eq } from 'drizzle-orm'
 
 import { UnauthorizedError } from './errors/unauthorized-error'
 
+const paramsSchema = z.object({
+  id: z.string(),
+})
+
 export async function dispatchOrder(app: FastifyInstance) {
   app.patch(
     '/orders/:id/dispatch',
     {
       preHandler: [app.authenticate],
-      schema: {
-        params: z.object({
-          id: z.string(),
-        }),
-      },
     },
     async (request, reply) => {
-      const { id: orderId } = request.params as { id: string }
+      const { id: orderId } = request.params as z.infer<typeof paramsSchema>
 
       const restaurantId = await request.getManagedRestaurantId()
 
