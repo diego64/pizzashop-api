@@ -1,5 +1,5 @@
 import fp from 'fastify-plugin'
-import fastifyJwt, { JWT } from '@fastify/jwt'  // <- só import para tipagem, pode ficar aqui
+import fastifyJwt, { JWT } from '@fastify/jwt'
 import type { FastifyCookieOptions } from '@fastify/cookie'
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { env } from '@/env'
@@ -13,7 +13,7 @@ export interface JwtPayload {
 
 declare module 'fastify' {
   interface FastifyRequest {
-    jwt: JWT  // <-- tipagem aqui
+    jwt: JWT
     getCurrentUser: () => Promise<JwtPayload>
     getManagedRestaurantId: () => Promise<string>
   }
@@ -25,7 +25,7 @@ declare module 'fastify' {
 }
 
 export default fp(async (app: FastifyInstance) => {
-  // NÃO REGISTRE O fastifyJwt NEM fastifyCookie AQUI — registre no server.ts
+  // ✅ Certifique-se de ter o plugin JWT já registrado antes deste plugin
 
   if (!app.hasRequestDecorator('getCurrentUser')) {
     app.decorateRequest('getCurrentUser', async function () {
@@ -56,14 +56,12 @@ export default fp(async (app: FastifyInstance) => {
   }
 
   if (!app.hasDecorator('authenticate')) {
-    app.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
+    app.decorate('authenticate', async (request: FastifyRequest) => {
       try {
         await request.getCurrentUser()
       } catch {
-        return reply.status(401).send({
-          code: 'UNAUTHORIZED',
-          message: 'Unauthorized',
-        })
+        // ✅ Lança erro para que o setErrorHandler capture
+        throw new UnauthorizedError()
       }
     })
   }
