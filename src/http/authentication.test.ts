@@ -27,7 +27,6 @@ describe('Authentication plugin', () => {
       })
     })
 
-    // Rotas usadas nos testes
     app.get('/sign', async (_req, reply) => {
       await app.signUser(reply, { sub: 'user-123', restaurantId: 'rest-456' })
       reply.send()

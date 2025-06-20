@@ -25,7 +25,6 @@ declare module 'fastify' {
 }
 
 export default fp(async (app: FastifyInstance) => {
-  // ✅ Certifique-se de ter o plugin JWT já registrado antes deste plugin
 
   if (!app.hasRequestDecorator('getCurrentUser')) {
     app.decorateRequest('getCurrentUser', async function () {
@@ -60,7 +59,6 @@ export default fp(async (app: FastifyInstance) => {
       try {
         await request.getCurrentUser()
       } catch {
-        // ✅ Lança erro para que o setErrorHandler capture
         throw new UnauthorizedError()
       }
     })
