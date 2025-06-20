@@ -1,6 +1,11 @@
-import path from 'path'
+import { mockEnv } from '../../__mocks__/env'
 import dotenv from 'dotenv'
+import path from 'path'
 
-const envPath = path.resolve(__dirname, '../../.env.test')
+dotenv.config({
+  path: path.resolve(__dirname, '../.env.test'),
+})
 
-dotenv.config({ path: envPath })
+for (const [key, value] of Object.entries(mockEnv)) {
+  process.env[key] = value
+}
