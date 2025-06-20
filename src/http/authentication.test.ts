@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest'
 import fastify, { FastifyInstance, FastifyError } from 'fastify'
 import cookie from '@fastify/cookie'
 import jwt from '@fastify/jwt'
+
 import authenticationPlugin from './authentication'
 import { UnauthorizedError } from './routes/errors/unauthorized-error'
 import { NotAManagerError } from './routes/errors/not-a-manager-error'
@@ -127,5 +128,29 @@ describe('Authentication plugin', () => {
       error: 'NotAManagerError',
       message: 'User is not a restaurant manager.',
     })
+  })
+
+  it('should not decorate again if decorators already exist', async () => {
+    const newApp = fastify()
+
+    newApp.decorateRequest('getCurrentUser', async () => {
+      return { sub: 'existing-user', restaurantId: 'existing-rest' }
+    })
+
+    newApp.decorateRequest('getManagedRestaurantId', async () => {
+      return 'existing-rest'
+    })
+
+    newApp.decorate('authenticate', async () => {})
+    newApp.decorate('signUser', async () => {})
+
+    await newApp.register(jwt, { secret: 'super-secret' })
+    await newApp.register(cookie)
+    await newApp.register(authenticationPlugin)
+
+    expect(newApp.hasRequestDecorator('getCurrentUser')).toBe(true)
+    expect(newApp.hasRequestDecorator('getManagedRestaurantId')).toBe(true)
+    expect(newApp.hasDecorator('authenticate')).toBe(true)
+    expect(newApp.hasDecorator('signUser')).toBe(true)
   })
 })
