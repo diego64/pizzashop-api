@@ -7,6 +7,7 @@ import cors from '@fastify/cors'
 
 import { checkDatabaseConnection } from '@/utils/check-database-connection'
 import { registerRoutes } from './routes'
+import { errorHandler } from './routes/errors/error-handler'
 
 const app = Fastify({
   logger: {
@@ -36,16 +37,7 @@ await app.register(cors, {
 
 await registerRoutes(app)
 
-app.setErrorHandler((error, request, reply) => {
-  if ((error as any).validation) {
-    reply.status(400).send({ message: 'Validation error', details: (error as any).validation })
-  } else if ((error as any).code === 'FST_ERR_NOT_FOUND') {
-    reply.status(404).send({ message: 'Not Found' })
-  } else {
-    request.log.error(error)
-    reply.status(500).send({ message: 'Internal Server Error' })
-  }
-})
+app.setErrorHandler(errorHandler)
 
 await checkDatabaseConnection()
 
