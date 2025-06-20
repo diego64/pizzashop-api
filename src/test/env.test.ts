@@ -1,8 +1,16 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
-describe('Env vars', () => {
-  it('should load .env.test values', () => {
-    expect(process.env.JWT_SECRET_TEST).toBeDefined()
-    expect(process.env.JWT_SECRET_TEST).toBe('supersecret')
+vi.mock('@/env', () => ({
+  env: {
+    JWT_SECRET: 'supersecret',
+  },
+}))
+
+import { env } from '@/env'
+
+describe('Env vars (mocked)', () => {
+  it('should load mocked env values from __mocks__', () => {
+    expect(env.JWT_SECRET).toBeDefined()
+    expect(env.JWT_SECRET).toBe('supersecret')
   })
 })
