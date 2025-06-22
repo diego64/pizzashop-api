@@ -2,7 +2,7 @@
   "compilerOptions": {
     "lib": ["ESNext"],
     "module": "ESNext",
-    "target": "ES2022", // ✅ Top-level await habilitado
+    "target": "ES2022",
     "moduleResolution": "Node",
     "noEmit": true,
     "jsx": "react-jsx",
