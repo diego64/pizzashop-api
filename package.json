@@ -13,7 +13,8 @@
     "envtest": "dotenv -e .env -- printenv DATABASE_URL",
     "test": "vitest",
     "test:watch": "vitest --watch",
-    "covarage": "npx serve coverage"
+    "generate:coverage": "npx vitest run --coverage",
+    "coverage": "npx serve coverage"
   },
   "author": "Diego Ferreira <diegoferreira1964@gmail.com>",
   "license": "GNU General Public License v3.0",

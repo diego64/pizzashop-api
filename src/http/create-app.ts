@@ -5,18 +5,22 @@ import { ZodTypeProvider } from 'fastify-type-provider-zod'
 import { registerRoutes } from './routes'
 
 export async function createApp() {
+  //server creation
   const app = Fastify().withTypeProvider<ZodTypeProvider>()
 
+  //JWT middleware
   await app.register(jwt, {
     secret: process.env.JWT_SECRET!,
     cookie: { cookieName: 'auth', signed: false },
   })
 
+  //CORS
   await app.register(cors, {
     credentials: true,
     origin: true,
   })
 
+  //authentication
   app.decorate('authenticate', async function (request: any, reply: any) {
     try {
       await request.jwtVerify()
@@ -27,10 +31,12 @@ export async function createApp() {
 
   await registerRoutes(app)
 
+  //routes
   app.get('/protected-route', { preValidation: [app.authenticate] }, async () => {
     return { ok: true }
   })
 
+  //error handling
   app.get('/error', async () => {
     throw new Error('Simulated internal error')
   })
@@ -46,5 +52,6 @@ export async function createApp() {
     }
   })
 
+  //reuse for testing and production
   return app
 }
