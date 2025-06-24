@@ -9,11 +9,36 @@ const bodySchema = z.object({
   comment: z.string().optional(),
 })
 
+const bodyJsonSchema = {
+  type: 'object',
+  required: ['restaurantId', 'rate'],
+  properties: {
+    restaurantId: { type: 'string' },
+    rate: { type: 'integer', minimum: 1, maximum: 5 },
+    comment: { type: 'string' },
+  },
+  additionalProperties: false,
+}
+
 export async function createEvaluation(app: FastifyInstance) {
   app.post(
     '/evaluations',
     {
       preHandler: [app.authenticate],
+      schema: {
+        body: bodyJsonSchema,
+        response: {
+          201: {
+            type: 'null',
+          },
+          400: {
+            type: 'object',
+            properties: {
+              message: { type: 'string' },
+            },
+          },
+        },
+      },
     },
     async (request, reply) => {
       const { restaurantId, rate, comment } = request.body as z.infer<typeof bodySchema>
