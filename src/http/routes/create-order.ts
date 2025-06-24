@@ -25,8 +25,20 @@ export async function createOrder(app: FastifyInstance) {
       preHandler: [app.authenticate],
     },
     async (request, reply) => {
-      const { restaurantId } = request.params as z.infer<typeof paramsSchema>
-      const { items } = request.body as z.infer<typeof bodySchema>
+      const parsedParams = paramsSchema.safeParse(request.params)
+      if (!parsedParams.success) {
+        return reply.status(400).send({ message: 'Invalid restaurant ID.' })
+      }
+
+      const parsedBody = bodySchema.safeParse(request.body)
+      if (!parsedBody.success) {
+        return reply
+          .status(400)
+          .send({ message: 'Invalid body.', issues: parsedBody.error.issues })
+      }
+
+      const { restaurantId } = parsedParams.data
+      const { items } = parsedBody.data
 
       const { sub: customerId } = await request.getCurrentUser()
 
