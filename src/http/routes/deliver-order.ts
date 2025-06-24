@@ -14,7 +14,6 @@ export async function deliverOrder(app: FastifyInstance) {
     '/orders/:id/deliver',
     {
       preHandler: [app.authenticate],
-      // removido o schema para evitar erro
     },
     async (request, reply) => {
       const { id: orderId } = request.params as z.infer<typeof paramsSchema>
