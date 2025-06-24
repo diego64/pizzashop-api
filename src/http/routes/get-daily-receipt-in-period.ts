@@ -6,8 +6,12 @@ import { orders } from '@/db/schema'
 import { and, eq, gte, lte, sql, sum } from 'drizzle-orm'
 
 const querySchema = z.object({
-  from: z.string().optional(),
-  to: z.string().optional(),
+  from: z.string().optional().refine((val) => !val || dayjs(val).isValid(), {
+    message: 'Invalid date format for from',
+  }),
+  to: z.string().optional().refine((val) => !val || dayjs(val).isValid(), {
+    message: 'Invalid date format for to',
+  }),
 })
 
 type Query = z.infer<typeof querySchema>
