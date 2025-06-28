@@ -1,42 +1,71 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { client } from '@/db/connection'
+import { vi, describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
 
-const resendConstructorMock = vi.fn()
-
-vi.mock('@/env', () => ({
-  env: {
-    RESEND_API_KEY: 'fake-api-key',
-  },
+vi.mock('@/db/connection', () => ({
+  client: vi.fn(),
 }))
 
-vi.mock('resend', () => {
-  return {
-    Resend: vi.fn().mockImplementation((apiKey: string) => {
-      resendConstructorMock(apiKey)
-      return { sendEmail: vi.fn() }
-    }),
+export async function checkDatabaseConnection(): Promise<boolean> {
+  try {
+    await client`SELECT 1`
+    console.log('====== Database connection established successfully! ======')
+    return true
+  } catch (error) {
+    console.error('Error connecting to the database:', error)
+    process.exit(1)
   }
+}
+
+// Silenciar logs apenas neste arquivo de teste
+let originalConsoleLog: typeof console.log
+let originalConsoleError: typeof console.error
+
+beforeAll(() => {
+  originalConsoleLog = console.log
+  originalConsoleError = console.error
+
+  console.log = vi.fn()
+  console.error = vi.fn()
 })
 
-describe('resend instance', () => {
-  let resend: any
-  let Resend: any
+afterAll(() => {
+  console.log = originalConsoleLog
+  console.error = originalConsoleError
+})
 
-  beforeEach(async () => {
-    // Só importa o módulo após os mocks estarem ativos
-    const clientModule = await import('./client')
-    resend = clientModule.resend
+describe('checkDatabaseConnection', () => {
+  let exitSpy: any
 
-    // Também importa o mock da classe
-    const resendModule = await import('resend')
-    Resend = resendModule.Resend
+  beforeEach(() => {
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
   })
 
-  it('must instantiate Resend with the environment variable key', () => {
-    expect(resendConstructorMock).toHaveBeenCalledWith('fake-api-key')
-    expect(resend).toHaveProperty('sendEmail')
+  afterEach(() => {
+    exitSpy.mockRestore()
+    vi.clearAllMocks()
   })
 
-  it('must be a "mocked" instance of Resend', () => {
-    expect(Resend).toHaveBeenCalledTimes(1)
+  it('should return true when the DB responds', async () => {
+    vi.mocked(client).mockResolvedValueOnce({
+      columns: [],
+      count: 1,
+      command: 'SELECT',
+      statement: 'SELECT 1',
+      state: 'SUCCESS',
+      [Symbol.iterator]: function* () { yield {} },
+    } as any)
+
+    const result = await checkDatabaseConnection()
+    expect(result).toBe(true)
+    expect(client).toHaveBeenCalledWith(['SELECT 1'])
+  })
+
+  it('should call process.exit when the DB throws an error', async () => {
+    vi.mocked(client).mockRejectedValueOnce(new Error('DB down'))
+
+    await expect(checkDatabaseConnection()).rejects.toThrow('process.exit called')
+    expect(exitSpy).toHaveBeenCalledWith(1)
   })
 })

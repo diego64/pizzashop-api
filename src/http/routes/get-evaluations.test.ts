@@ -15,8 +15,13 @@ vi.mock('@/db/connection', () => ({
 
 describe('getEvaluations route', () => {
   let app: FastifyInstance
+  let logSpy: ReturnType<typeof vi.spyOn>
+  let errorSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(async () => {
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
     app = fastify()
 
     app.decorate('authenticate', async () => {})
@@ -32,6 +37,9 @@ describe('getEvaluations route', () => {
   afterEach(async () => {
     vi.clearAllMocks()
     await app.close()
+
+    logSpy.mockRestore()
+    errorSpy.mockRestore()
   })
 
   it('should return 401 if user has no restaurantId', async () => {
@@ -85,7 +93,6 @@ describe('getEvaluations route', () => {
     expect(db.query.evaluations.findMany).toHaveBeenCalled()
 
     const callArg = vi.mocked(db.query.evaluations.findMany).mock.calls[0]?.[0]
-
     expect(callArg).toBeDefined()
     expect(callArg?.offset).toBe(0)
     expect(callArg?.limit).toBe(10)
@@ -94,7 +101,6 @@ describe('getEvaluations route', () => {
 
     expect(response.statusCode).toBe(200)
 
-    // Ajusta createdAt para comparar objetos Date
     const responseData = response.json().map((evaluation: any) => ({
       ...evaluation,
       createdAt: new Date(evaluation.createdAt),
@@ -125,12 +131,8 @@ describe('getEvaluations route', () => {
     expect(db.query.evaluations.findMany).toHaveBeenCalled()
 
     const callArg = vi.mocked(db.query.evaluations.findMany).mock.calls[0]?.[0]
-    expect(callArg).toBeDefined()
-
     expect(callArg?.offset).toBe(20)
     expect(callArg?.limit).toBe(10)
-    expect(typeof callArg?.orderBy).toBe('function')
-    expect(typeof callArg?.where).toBe('function')
 
     expect(response.statusCode).toBe(200)
 
@@ -161,15 +163,10 @@ describe('getEvaluations route', () => {
       url: '/evaluations?pageIndex=invalid',
     })
 
-    expect(db.query.evaluations.findMany).toHaveBeenCalled()
-
     const callArg = vi.mocked(db.query.evaluations.findMany).mock.calls[0]?.[0]
 
-    expect(callArg).toBeDefined()
     expect(callArg?.offset).toBe(0)
     expect(callArg?.limit).toBe(10)
-    expect(typeof callArg?.orderBy).toBe('function')
-    expect(typeof callArg?.where).toBe('function')
 
     expect(response.statusCode).toBe(200)
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { buildApp } from './build-app'
 import { UnauthorizedError } from '@/http/routes/errors/unauthorized-error'
 import { NotAManagerError } from '@/http/routes/errors/not-a-manager-error'
@@ -7,8 +7,16 @@ import Fastify, { FastifyInstance } from 'fastify'
 describe('buildApp', () => {
   let app: FastifyInstance
 
+  const originalConsoleError = console.error
+  const originalConsoleWarn = console.warn
+  const originalConsoleLog = console.log
+
   beforeEach(async () => {
-    // Rregistro de rota
+    // Silencia logs
+    console.error = vi.fn()
+    console.warn = vi.fn()
+    console.log = vi.fn()
+
     const mockRegisterRoutes = vi.fn(async (appInstance) => {
       appInstance.get('/test', async (_req: any, _res: any) => {
         return { success: true }
@@ -16,6 +24,13 @@ describe('buildApp', () => {
     })
 
     app = await buildApp(mockRegisterRoutes)
+  })
+
+  afterEach(async () => {
+    console.error = originalConsoleError
+    console.warn = originalConsoleWarn
+    console.log = originalConsoleLog
+    if (app?.close) await app.close()
   })
 
   it('must create the app and record a test route', async () => {
@@ -48,6 +63,8 @@ describe('buildApp', () => {
       code: 'UNAUTHORIZED',
       message: 'You are not authorized to access this resource.',
     })
+
+    await errorApp.close()
   })
 
   it('should return 403 for NotAManagerError', async () => {
@@ -70,6 +87,8 @@ describe('buildApp', () => {
       code: 'FORBIDDEN',
       message: 'You do not have permission to access this resource.',
     })
+
+    await errorApp.close()
   })
 
   it('should return 500 for generic errors', async () => {
@@ -92,5 +111,7 @@ describe('buildApp', () => {
       code: 'INTERNAL_SERVER_ERROR',
       message: 'An unexpected error occurred.',
     })
+
+    await errorApp.close()
   })
 })

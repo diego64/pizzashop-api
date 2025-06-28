@@ -18,7 +18,16 @@ describe('GET /orders', () => {
   let app: FastifyInstance
   const mockGetManagedRestaurantId = vi.fn()
 
+  const originalConsoleError = console.error
+  const originalConsoleLog = console.log
+  const originalConsoleWarn = console.warn
+
   beforeEach(async () => {
+    // Silencia logs
+    console.error = vi.fn()
+    console.log = vi.fn()
+    console.warn = vi.fn()
+
     app = Fastify()
 
     app.decorate('authenticate', async (request: any, _reply: FastifyReply) => {
@@ -78,7 +87,6 @@ describe('GET /orders', () => {
       },
     )
 
-    // Mock para totalCount
     const countQueryBuilder = {
       from() {
         return this
@@ -91,7 +99,6 @@ describe('GET /orders', () => {
       },
     }
 
-    // Mock para orders
     const ordersQueryBuilder = {
       from() {
         return this
@@ -113,7 +120,6 @@ describe('GET /orders', () => {
       },
     }
 
-    // Spy db.select com lógica condicional
     vi.spyOn(db, 'select').mockImplementation((args?: any) => {
       if (args && 'count' in args) {
         return countQueryBuilder as any
@@ -126,8 +132,12 @@ describe('GET /orders', () => {
     await app.ready()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.clearAllMocks()
+    console.error = originalConsoleError
+    console.log = originalConsoleLog
+    console.warn = originalConsoleWarn
+    if (app) await app.close()
   })
 
   it('should return orders list with metadata', async () => {

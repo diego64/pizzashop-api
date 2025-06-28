@@ -29,6 +29,20 @@ vi.mock('@/db/connection', () => ({
 
 describe('GET /me', () => {
   let app: ReturnType<typeof Fastify>
+  let logSpy: ReturnType<typeof vi.spyOn>
+  let errorSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(async () => {
+    if (app) await app.close()
+    vi.resetAllMocks()
+    logSpy.mockRestore()
+    errorSpy.mockRestore()
+  })
 
   function buildApp(authenticateImpl: any) {
     const instance = Fastify()
@@ -46,11 +60,6 @@ describe('GET /me', () => {
     getProfile(instance)
     return instance
   }
-
-  afterEach(async () => {
-    if (app) await app.close()
-    vi.resetAllMocks()
-  })
 
   it('should return user profile with status 200', async () => {
     (db.query.users.findFirst as any).mockResolvedValue(mockUser)
