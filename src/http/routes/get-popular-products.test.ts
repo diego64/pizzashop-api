@@ -1,6 +1,6 @@
 import Fastify from 'fastify'
 import supertest from 'supertest'
-import { describe, it, afterEach, expect, vi } from 'vitest'
+import { describe, it, afterEach, expect, vi, beforeEach } from 'vitest'
 import { getPopularProducts } from './get-popular-products'
 import { db } from '@/db/connection'
 
@@ -23,6 +23,7 @@ describe('GET /metrics/popular-products', () => {
 
   function buildApp(authenticateImpl: any) {
     const instance = Fastify()
+
     instance.decorate('authenticate', authenticateImpl)
 
     instance.setErrorHandler((error, _request, reply) => {
@@ -31,7 +32,7 @@ describe('GET /metrics/popular-products', () => {
       } else if (error.name === 'UnauthorizedError') {
         reply.status(401).send({ message: error.message })
       } else {
-        reply.status(500).send({ message: 'Internal Server Error' })
+        reply.status(500).send({ message: 'An error occurred while fetching popular products.' })
       }
     })
 
@@ -75,7 +76,10 @@ describe('GET /metrics/popular-products', () => {
     expect(response.body.message).toMatch(/not authorized/i)
   })
 
-  it('should return 500 if DB query fails', async () => {
+  it('should return 500 if DB query fails (without logging the error)', async () => {
+    // Suprime console.error temporariamente
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
     vi.spyOn(db, 'select').mockImplementationOnce(() => {
       throw new Error('DB error')
     })
@@ -91,5 +95,7 @@ describe('GET /metrics/popular-products', () => {
       .expect(500)
 
     expect(response.body.message).toBe('An error occurred while fetching popular products.')
+
+    consoleErrorSpy.mockRestore() // Restaura comportamento padrão
   })
 })
