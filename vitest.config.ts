@@ -14,10 +14,14 @@ export default defineConfig({
       exclude: [
         'src/http/server.ts',
         'src/db/**',
-        'src/@types/**'
+        'src/@types/**',
+        'src/mail/templates/**',
+        './drizzle.config.ts',
+        './tsup.config.ts',
+        './vitest.config.ts',
       ],
     },
-    include: ['src/**/*.{test,spec}.{ts,js}']
+    include: ['src/**/*.{test,spec}.{ts,js}'],
   },
   resolve: {
     alias: {
