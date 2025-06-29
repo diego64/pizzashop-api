@@ -1,78 +1,116 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fastify } from 'fastify'
-import { z } from 'zod'
+import Fastify from 'fastify'
+import { sendAuthenticationLink } from './send-authentication-link'
+import { db } from '@/db/connection'
+import { authLinks } from '@/db/schema'
+import { createId } from '@paralleldrive/cuid2'
 
-describe('sendAuthenticationLink', () => {
-  let app: ReturnType<typeof fastify>
+vi.mock('@/db/connection', () => {
+  return {
+    db: {
+      query: {
+        users: {
+          findFirst: vi.fn(),
+        },
+      },
+      insert: vi.fn(() => ({
+        values: vi.fn(() => ({
+          returning: vi.fn(() => Promise.resolve([{ id: 'some-id' }])),
+        })),
+      })),
+    },
+  }
+})
+
+vi.mock('@paralleldrive/cuid2', () => ({
+  createId: vi.fn(() => 'fixed-code'),
+}))
+
+describe('sendAuthenticationLink route', () => {
+  let app: ReturnType<typeof Fastify>
+  let originalConsoleLog: typeof console.log
 
   beforeEach(async () => {
-    app = fastify()
+    originalConsoleLog = console.log
+    console.log = vi.fn()
 
-    app.post('/authenticate', async (request: { body: unknown }, reply: { status: (arg0: number) => { (): any; new(): any; send: { (arg0: { message: string; issues?: z.ZodIssue[] } | undefined): any; new(): any } } }) => {
-      try {
-        const schema = z.object({
-          email: z.string().email(),
-        })
-        const { email } = schema.parse(request.body)
+    process.env.API_BASE_URL = 'http://localhost'
+    process.env.AUTH_REDIRECT_URL = 'https://app.test/redirect'
 
-        if (email === 'john.doe@example.com') {
-          return reply.status(204).send(undefined)
-        } else {
-          return reply.status(401).send({ message: 'Unauthorized' })
-        }
-      } catch (error) {
-        if (error instanceof z.ZodError) {
-          return reply.status(400).send({
-            message: 'Validation error',
-            issues: error.issues,
-          })
-        }
-        return reply.status(500).send({ message: 'Internal server error' })
-      }
-    })
-
+    app = Fastify()
+    await sendAuthenticationLink(app)
     await app.ready()
   })
 
   afterEach(async () => {
+    console.log = originalConsoleLog
     await app.close()
+    vi.clearAllMocks()
   })
 
-  it('should send authentication link successfully', async () => {
-    const response = await app.inject({
-      method: 'POST',
-      url: '/authenticate',
-      payload: {
-        email: 'john.doe@example.com',
-      },
+  it('should return 204 and log link when email exists', async () => {
+    ;(db.query.users.findFirst as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'user-1',
+      email: 'john@example.com',
     })
 
-    expect(response.statusCode).toBe(204)
+    const res = await app.inject({
+      method: 'POST',
+      url: '/authenticate',
+      payload: { email: 'john@example.com' },
+    })
+
+    expect(res.statusCode).toBe(204)
+    expect(console.log).toHaveBeenCalled()
+    const logged = (console.log as any).mock.calls[0][0] as string
+    expect(logged).toContain('http://localhost/auth-links/authenticate?code=fixed-code')
+    expect(logged).toContain('auth-links/authenticate?code=fixed-code')
+    expect(createId).toHaveBeenCalled()
   })
 
-  it('should return 401 if email does not exist', async () => {
-    const response = await app.inject({
+  it('should return 401 when user not found', async () => {
+    ;(db.query.users.findFirst as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(null)
+
+    const res = await app.inject({
       method: 'POST',
       url: '/authenticate',
-      payload: {
-        email: 'naoexiste@example.com',
-      },
+      payload: { email: 'no@mail.com' },
     })
 
-    expect(response.statusCode).toBe(401)
-    expect(JSON.parse(response.body).message).toBe('Unauthorized')
+    expect(res.statusCode).toBe(401)
+    const body = JSON.parse(res.body)
+    expect(body.message).toBe('You are not authorized to access this resource.')
+    expect(body.error).toBe('Unauthorized')
+    expect(console.log).not.toHaveBeenCalled()
   })
 
-  it('should return 400 if request body is invalid', async () => {
-    const response = await app.inject({
+  it('should return 400 when payload is invalid', async () => {
+    const res = await app.inject({
       method: 'POST',
       url: '/authenticate',
-      payload: {
-        email: 'not-an-email',
-      },
+      payload: { email: 'invalid-email' }, // supondo que há validação para email válido
     })
 
-    expect(response.statusCode).toBe(400)
-    expect(JSON.parse(response.body).message).toBe('Validation error')
+    expect(res.statusCode).toBe(400)
+    const body = JSON.parse(res.body)
+    expect(body.error).toBe('Bad Request')
+    expect(body.message).toMatch(/email/)
+    expect(console.log).not.toHaveBeenCalled()
+  })
+
+  it('should return 500 on unexpected error', async () => {
+    ;(db.query.users.findFirst as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('DB broken'))
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/authenticate',
+      payload: { email: 'john@example.com' },
+    })
+
+    expect(res.statusCode).toBe(500)
+    const body = JSON.parse(res.body)
+    expect(body.error).toBe('Internal Server Error')
+    expect(body.message).toBe('DB broken')
+    expect(console.log).not.toHaveBeenCalled()
   })
 })

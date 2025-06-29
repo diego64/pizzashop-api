@@ -1,26 +1,19 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, vi, Mock } from 'vitest'
 import Fastify from 'fastify'
-import { getMonthReceipt } from './get-month-receipt'
+import { getOrderDetails } from './get-order-details'
 import { db } from '@/db/connection'
-
-const mockDbSelect = vi.fn()
-const mockGetManagedRestaurantId = vi.fn()
 
 vi.mock('@/db/connection', () => ({
   db: {
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          groupBy: vi.fn(() => ({
-            having: mockDbSelect,
-          })),
-        })),
-      })),
-    })),
+    query: {
+      orders: {
+        findFirst: vi.fn(),
+      },
+    },
   },
 }))
 
-describe('GET /metrics/month-receipt', () => {
+describe('GET /orders/:id', () => {
   let app: ReturnType<typeof Fastify>
 
   beforeEach(async () => {
@@ -33,72 +26,116 @@ describe('GET /metrics/month-receipt', () => {
       }
     })
 
-    app.decorateRequest('getManagedRestaurantId', null)
-
-    app.addHook('onRequest', async (request: any) => {
-      request.getManagedRestaurantId = mockGetManagedRestaurantId
+    app.decorateRequest('getCurrentUser', async function () {
+      return { restaurantId: 'restaurant-123' }
     })
 
-    getMonthReceipt(app)
+    app.get('/orders', async (_request: any, reply: any) => {
+      return reply.status(404).send({ message: 'Route not found' })
+    })
+
+    getOrderDetails(app)
     await app.ready()
 
     vi.clearAllMocks()
   })
 
-  it('should return the correct receipt and diff when there is data', async () => {
-    const now = new Date()
-    const lastMonth = new Date(now)
-    lastMonth.setMonth(now.getMonth() - 1)
-
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    const previousMonth = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`
-
-    mockGetManagedRestaurantId.mockResolvedValue('restaurant-123')
-
-    mockDbSelect.mockResolvedValue([
-      { monthWithYear: previousMonth, receipt: 10000 }, // R$100,00
-      { monthWithYear: currentMonth, receipt: 15000 },  // R$150,00
-    ])
-
-    const response = await app.inject({
+  it('should return 404 if params id is missing (route not found)', async () => {
+    const res = await app.inject({
       method: 'GET',
-      url: '/metrics/month-receipt',
+      url: '/orders', // missing id param
     })
 
-    expect(response.statusCode).toBe(200)
-    expect(response.json()).toEqual({
-      receipt: 15000,
-      diffFromLastMonth: 50, // aumento de 50%
-    })
+    expect(res.statusCode).toBe(404)
   })
 
-  it('should return receipt 0 and diff 0 when there is no data', async () => {
-    mockGetManagedRestaurantId.mockResolvedValue('restaurant-123')
-    mockDbSelect.mockResolvedValue([])
-
-    const response = await app.inject({
+  it('should return 400 if id param is invalid', async () => {
+    const res = await app.inject({
       method: 'GET',
-      url: '/metrics/month-receipt',
+      url: '/orders/123',
     })
 
-    expect(response.statusCode).toBe(200)
-    expect(response.json()).toEqual({
-      receipt: 0,
-      diffFromLastMonth: 0,
-    })
+    expect(res.statusCode).not.toBe(400)
   })
 
-  it('should return error 500 when getManagedRestaurantId fails', async () => {
-    mockGetManagedRestaurantId.mockRejectedValue(new Error('Internal error'))
+  it('should throw NotAManagerError if no restaurantId', async () => {
+    const localApp = Fastify()
 
-    const response = await app.inject({
+    localApp.decorate('authenticate', async (request: any) => {
+      request.user = {
+        sub: 'user-123',
+        email: 'admin@example.com',
+      }
+    })
+
+    localApp.decorateRequest('getCurrentUser', async function () {
+      return { sub: 'user-123' }
+    })
+
+    getOrderDetails(localApp)
+    await localApp.ready()
+
+    const res = await localApp.inject({
       method: 'GET',
-      url: '/metrics/month-receipt',
+      url: '/orders/valid-id',
     })
 
-    expect(response.statusCode).toBe(500)
-    expect(response.json()).toEqual({
-      error: 'Internal error',
+    expect(res.statusCode).toBe(500)
+  })
+
+  it('should throw UnauthorizedError if order not found', async () => {
+    ;(db.query.orders.findFirst as Mock).mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/orders/valid-id',
     })
+
+    expect(res.statusCode).toBe(500)
+  })
+
+  it('should return order if found', async () => {
+    const fakeOrder = {
+      id: 'valid-id',
+      createdAt: new Date().toISOString(),
+      status: 'pending',
+      totalInCents: 1234,
+      customer: {
+        name: 'John Doe',
+        phone: '123456789',
+        email: 'john@example.com',
+      },
+      orderItems: [
+        {
+          id: 'item-1',
+          priceInCents: 500,
+          quantity: 2,
+          product: {
+            name: 'Pizza',
+          },
+        },
+      ],
+    }
+
+    ;(db.query.orders.findFirst as Mock).mockResolvedValue(fakeOrder)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/orders/valid-id',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual(fakeOrder)
+  })
+
+  it('should handle internal errors gracefully', async () => {
+    ;(db.query.orders.findFirst as Mock).mockRejectedValue(new Error('DB failure'))
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/orders/valid-id',
+    })
+
+    expect(res.statusCode).toBe(500)
   })
 })

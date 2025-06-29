@@ -23,7 +23,6 @@ describe('GET /orders', () => {
   const originalConsoleWarn = console.warn
 
   beforeEach(async () => {
-    // Silencia logs
     console.error = vi.fn()
     console.log = vi.fn()
     console.warn = vi.fn()
@@ -153,6 +152,19 @@ describe('GET /orders', () => {
     })
   })
 
+  it('should return orders filtered by orderId, customerName, and status', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/orders?pageIndex=0&orderId=1&customerName=John&status=pending',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      orders: fakeOrders,
+      metadata: { totalCount: 1, pageIndex: 0 },
+    })
+  })
+
   it('should return 401 if user is not a restaurant manager', async () => {
     mockGetManagedRestaurantId.mockResolvedValue(null)
 
@@ -169,7 +181,7 @@ describe('GET /orders', () => {
     })
   })
 
-  it('should return 400 if pageIndex is invalid', async () => {
+  it('should return 400 if pageIndex is invalid (negative)', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/orders?pageIndex=-1',
@@ -187,5 +199,73 @@ describe('GET /orders', () => {
 
     expect(res.statusCode).toBe(400)
     expect(res.json().error).toBe('Invalid query parameters')
+  })
+
+  it('should return 400 if pageIndex is not a number', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/orders?pageIndex=abc',
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('Invalid query parameters')
+  })
+
+  it('should return 500 if database query throws an error', async () => {
+    mockGetManagedRestaurantId.mockResolvedValue('restaurant-123')
+
+    vi.spyOn(db, 'select').mockImplementation(() => {
+      return {
+        from() {
+          return this
+        },
+        where() {
+          throw new Error('DB failure')
+        },
+      } as any
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/orders?pageIndex=0',
+    })
+
+    expect(res.statusCode).toBe(500)
+    expect(res.json().error).toBe('DB failure')
+  })
+
+  it('should call orderBy with custom ordering', async () => {
+    const orderBySpy = vi.fn(() => ({
+      offset: () => ({
+        limit: () => Promise.resolve(fakeOrders),
+      }),
+    }))
+
+    const countMock = {
+      from: () => ({
+        where: () => Promise.resolve([{ count: 1 }]),
+      }),
+    }
+
+    const dbSelectMock = vi.spyOn(db, 'select')
+    dbSelectMock
+      .mockImplementationOnce(() => countMock as any)
+      .mockImplementationOnce(() => ({
+        from: () => ({
+          where: () => ({
+            orderBy: orderBySpy,
+          }),
+        }),
+      }) as any)
+
+    mockGetManagedRestaurantId.mockResolvedValue('restaurant-123')
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/orders?pageIndex=0',
+    })
+
+    expect(orderBySpy).toHaveBeenCalled()
+    expect(res.statusCode).toBe(200)
   })
 })
