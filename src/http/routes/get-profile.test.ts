@@ -5,13 +5,7 @@ import { getProfile } from './get-profile'
 import { db } from '@/db/connection'
 import { UnauthorizedError } from './errors/unauthorized-error'
 
-interface User {
-  id: string
-  name: string
-  email: string
-}
-
-const mockUser: User = {
+const mockUser = {
   id: 'user-123',
   name: 'John Doe',
   email: 'john.doe@example.com',
@@ -29,19 +23,10 @@ vi.mock('@/db/connection', () => ({
 
 describe('GET /me', () => {
   let app: ReturnType<typeof Fastify>
-  let logSpy: ReturnType<typeof vi.spyOn>
-  let errorSpy: ReturnType<typeof vi.spyOn>
-
-  beforeEach(() => {
-    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-  })
 
   afterEach(async () => {
     if (app) await app.close()
     vi.resetAllMocks()
-    logSpy.mockRestore()
-    errorSpy.mockRestore()
   })
 
   function buildApp(authenticateImpl: any) {
@@ -49,7 +34,7 @@ describe('GET /me', () => {
 
     instance.decorate('authenticate', authenticateImpl)
 
-    instance.setErrorHandler((error, request, reply) => {
+    instance.setErrorHandler((error, _request, reply) => {
       if (error instanceof UnauthorizedError) {
         reply.status(401).send({ message: error.message })
       } else {
@@ -98,6 +83,33 @@ describe('GET /me', () => {
 
     app = buildApp(async (request: any, _reply: any) => {
       request.getCurrentUser = async () => ({ sub: mockUser.id })
+    })
+    await app.ready()
+
+    const response = await supertest(app.server)
+      .get('/me')
+      .expect(500)
+
+    expect(response.body.message).toBe('An error occurred while fetching user profile.')
+  })
+
+  it('should return 401 if authenticate fails (preHandler rejection)', async () => {
+    app = buildApp(async () => {
+      throw new UnauthorizedError('Not authenticated')
+    })
+    await app.ready()
+
+    const response = await supertest(app.server)
+      .get('/me')
+      .expect(401)
+
+    expect(response.body.message).toBe('Not authenticated')
+  })
+
+  it('should return 500 if getCurrentUser is not defined on request', async () => {
+    (db.query.users.findFirst as any).mockResolvedValue(mockUser)
+
+    app = buildApp(async (_request: any, _reply: any) => {
     })
     await app.ready()
 

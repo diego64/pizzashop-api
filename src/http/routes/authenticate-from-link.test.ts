@@ -9,6 +9,7 @@ import { authLinks } from '@/db/schema'
 declare module 'fastify' {
   interface FastifyRequest {
     userPayload?: any
+    signUser: (payload: { sub: string; restaurantId?: string }) => Promise<void>
   }
 }
 
@@ -30,6 +31,9 @@ vi.mock('@/db/connection', () => ({
 
 describe('authenticateFromLink route', () => {
   let app: FastifyInstance
+  const mockSignUser = vi.fn(async function (this: import('fastify').FastifyRequest, payload: any) {
+    this.userPayload = payload
+  })
 
   beforeEach(async () => {
     app = fastify()
@@ -42,10 +46,7 @@ describe('authenticateFromLink route', () => {
       }
     })
 
-    // Mock do método signUser no request
-    app.decorateRequest('signUser', async function (payload: any) {
-      this.userPayload = payload
-    })
+    app.decorateRequest('signUser', mockSignUser)
 
     await authenticateFromLink(app)
     await app.ready()
@@ -94,7 +95,7 @@ describe('authenticateFromLink route', () => {
       code: 'valid-code',
       userId: 'user-123',
       createdAt: now,
-      id: ''
+      id: 'auth-id-1'
     })
 
     vi.mocked(db.query.restaurants.findFirst).mockResolvedValue({
@@ -106,7 +107,6 @@ describe('authenticateFromLink route', () => {
       updatedAt: null
     })
 
-    // Mock para delete().where()
     const mockWhere = vi.fn()
     vi.mocked(db.delete).mockReturnValue({ where: mockWhere } as any)
 
@@ -115,12 +115,34 @@ describe('authenticateFromLink route', () => {
       url: `/auth-links/authenticate?code=valid-code&redirect=https://redirect.url`,
     })
 
-    // A rota deve redirecionar para redirect
     expect(response.statusCode).toBe(302)
     expect(response.headers.location).toBe('https://redirect.url')
 
-    // Verifica se o método delete foi chamado corretamente
+    // Confirma que signUser foi chamado corretamente
+    expect(mockSignUser).toHaveBeenCalledWith({
+      sub: 'user-123',
+      restaurantId: 'resto-1',
+    })
+
+    // Confirma que o link foi deletado
     expect(db.delete).toHaveBeenCalledWith(authLinks)
     expect(mockWhere).toHaveBeenCalled()
+  })
+
+  it('should return 500 if unexpected error occurs', async () => {
+    // Simular erro interno inesperado
+    vi.mocked(db.query.authLinks.findFirst).mockImplementation(() => {
+      throw new Error('Unexpected failure')
+    })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/auth-links/authenticate?code=any-code&redirect=https://redirect.url`,
+    })
+
+    expect(response.statusCode).toBe(500)
+    expect(response.json()).toEqual({
+      message: 'Unexpected failure',
+    })
   })
 })

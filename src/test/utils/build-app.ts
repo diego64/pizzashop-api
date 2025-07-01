@@ -1,11 +1,18 @@
-import Fastify, { FastifyInstance } from 'fastify'
+import Fastify, { FastifyInstance, FastifyLoggerInstance } from 'fastify'
 import authenticationPlugin from '../../http/authentication'
 import { UnauthorizedError } from '@/http/routes/errors/unauthorized-error'
 import { NotAManagerError } from '@/http/routes/errors/not-a-manager-error'
 
-export async function buildApp(registerRoutes: (app: FastifyInstance) => Promise<void> | void) {
+interface BuildAppOptions {
+  logger?: FastifyLoggerInstance
+}
+
+export async function buildApp(
+  registerRoutes: (app: FastifyInstance) => Promise<void> | void,
+  options?: BuildAppOptions
+) {
   const app = Fastify({
-    logger: { level: 'info' },
+    logger: options?.logger ?? { level: 'info' },
     pluginTimeout: 500_000,
   })
 

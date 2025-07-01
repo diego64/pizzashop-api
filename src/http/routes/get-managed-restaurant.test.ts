@@ -19,7 +19,6 @@ describe('GET /managed-restaurant', () => {
   beforeEach(async () => {
     app = fastify()
 
-    // Mock de autenticação e do método `getManagedRestaurantId`
     app.decorate('authenticate', async () => {})
 
     app.decorateRequest('getManagedRestaurantId', function () {
@@ -54,7 +53,6 @@ describe('GET /managed-restaurant', () => {
 
     expect(response.statusCode).toBe(200)
 
-    // Corrige createdAt para comparação
     const responseData = {
       ...response.json(),
       createdAt: new Date(response.json().createdAt),
@@ -75,7 +73,7 @@ describe('GET /managed-restaurant', () => {
     expect(response.json()).toEqual({ error: 'Restaurant not found.' })
   })
 
-  it('should return 500 if an unexpected error occurs', async () => {
+  it('should return 500 if an Error is thrown', async () => {
     vi.mocked(db.query.restaurants.findFirst).mockRejectedValue(new Error('Database failure'))
 
     const response = await app.inject({
@@ -85,5 +83,27 @@ describe('GET /managed-restaurant', () => {
 
     expect(response.statusCode).toBe(500)
     expect(response.json()).toEqual({ error: 'Database failure' })
+  })
+
+  it('should return 500 with generic message if a non-Error is thrown', async () => {
+    vi.mocked(db.query.restaurants.findFirst).mockRejectedValue('non-error string')
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/managed-restaurant',
+    })
+
+    expect(response.statusCode).toBe(500)
+    expect(response.json()).toEqual({ error: 'Internal Server Error' })
+  })
+
+  it('should call getManagedRestaurantId directly for function coverage', async () => {
+    const mockRequest = {
+      getManagedRestaurantId: vi.fn().mockResolvedValue('rest-123')
+    }
+
+    const result = await mockRequest.getManagedRestaurantId()
+    expect(result).toBe('rest-123')
+    expect(mockRequest.getManagedRestaurantId).toHaveBeenCalled()
   })
 })

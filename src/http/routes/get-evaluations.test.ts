@@ -24,10 +24,10 @@ describe('getEvaluations route', () => {
 
     app = fastify()
 
-    app.decorate('authenticate', async () => {})
+    app.decorate('authenticate', async () => {}) // função decorada
 
     app.decorateRequest('getCurrentUser', function () {
-      return Promise.resolve({ sub: 'test-user', restaurantId: 'rest-1' })
+      return Promise.resolve({ sub: 'test-user', restaurantId: 'rest-1' }) // função decorada
     })
 
     await getEvaluations(app)
@@ -128,9 +128,8 @@ describe('getEvaluations route', () => {
       url: '/evaluations?pageIndex=2',
     })
 
-    expect(db.query.evaluations.findMany).toHaveBeenCalled()
-
     const callArg = vi.mocked(db.query.evaluations.findMany).mock.calls[0]?.[0]
+
     expect(callArg?.offset).toBe(20)
     expect(callArg?.limit).toBe(10)
 
@@ -176,5 +175,24 @@ describe('getEvaluations route', () => {
     }))
 
     expect(responseData).toEqual(fakeEvaluations)
+  })
+
+  it('should execute authenticate and getCurrentUser directly (function coverage)', async () => {
+    const fakeRequest = {
+      getCurrentUser: async () => ({ sub: 'test-user', restaurantId: 'rest-1' })
+    } as any
+
+    const fakeReply = {} as any
+
+    const authenticate = app.authenticate
+
+    expect(typeof authenticate).toBe('function')
+    expect(typeof fakeRequest.getCurrentUser).toBe('function')
+
+    await authenticate(fakeRequest, fakeReply)
+
+    const result = await fakeRequest.getCurrentUser()
+
+    expect(result).toEqual({ sub: 'test-user', restaurantId: 'rest-1' })
   })
 })

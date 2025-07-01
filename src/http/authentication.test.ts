@@ -55,6 +55,24 @@ describe('Authentication plugin', () => {
         return reply.send({ ok: true })
       },
     })
+    
+    app.get('/me-error', {
+      preHandler: [app.authenticate],
+      handler: async (req, reply) => {
+        // Forçar erro no jwtVerify sobrescrevendo jwtVerify para simular falha
+        const origVerify = req.jwtVerify.bind(req)
+        req.jwtVerify = () => { throw new Error('JWT error') }
+
+        try {
+          await req.getCurrentUser()
+          reply.send({ fail: false })
+        } catch (err) {
+          reply.send({ fail: true, error: err instanceof UnauthorizedError })
+        } finally {
+          req.jwtVerify = origVerify
+        }
+      },
+    })
 
     await app.ready()
   })
@@ -152,5 +170,66 @@ describe('Authentication plugin', () => {
     expect(newApp.hasRequestDecorator('getManagedRestaurantId')).toBe(true)
     expect(newApp.hasDecorator('authenticate')).toBe(true)
     expect(newApp.hasDecorator('signUser')).toBe(true)
+  })
+
+  it('should throw UnauthorizedError when getCurrentUser jwtVerify fails', async () => {
+    const token = await app.jwt.sign({ sub: 'user-123' })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/me-error',
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    })
+
+    const json = response.json()
+    expect(json.fail).toBe(true)
+    expect(json.error).toBe(true)
+  })
+
+  it('should throw UnauthorizedError when authenticate fails', async () => {
+    // Criar um novo app para esse teste, pois não pode decorar após ready()
+    const newApp = fastify()
+
+    newApp.decorateRequest('getCurrentUser', async () => { throw new UnauthorizedError() })
+
+    await newApp.register(cookie)
+    await newApp.register(jwt, { secret: 'super-secret' })
+    await newApp.register(authenticationPlugin)
+
+    newApp.setErrorHandler((error: FastifyError, _request, reply) => {
+      const statusCode =
+        error instanceof UnauthorizedError ? 401 :
+        error instanceof NotAManagerError ? 500 : 500
+
+      reply.status(statusCode).send({
+        error: error.name,
+        message: error.message,
+      })
+    })
+
+    newApp.get('/protected', {
+      preHandler: [newApp.authenticate],
+      handler: async (_req, reply) => {
+        return reply.send({ ok: true })
+      },
+    })
+
+    await newApp.ready()
+
+    const response = await newApp.inject({
+      method: 'GET',
+      url: '/protected',
+      headers: {
+        authorization: 'Bearer invalid.token',
+      },
+    })
+
+    expect(response.statusCode).toBe(401)
+    expect(response.json()).toEqual({
+      error: 'UnauthorizedError',
+      message: 'Unauthorized',
+    })
   })
 })

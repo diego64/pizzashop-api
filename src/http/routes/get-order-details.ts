@@ -38,7 +38,6 @@ export async function getOrderDetails(app: FastifyInstance) {
       const { restaurantId } = await request.getCurrentUser()
 
       if (!restaurantId) {
-        // Aqui lança seu erro customizado NotAManagerError
         throw new NotAManagerError()
       }
 
@@ -78,7 +77,6 @@ export async function getOrderDetails(app: FastifyInstance) {
       })
 
       if (!order) {
-        // Lança seu erro customizado UnauthorizedError
         throw new UnauthorizedError()
       }
 

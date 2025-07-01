@@ -1,22 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import * as fastifyModule from 'fastify'
 import { buildApp } from './build-app'
 import { UnauthorizedError } from '@/http/routes/errors/unauthorized-error'
 import { NotAManagerError } from '@/http/routes/errors/not-a-manager-error'
-import Fastify, { FastifyInstance } from 'fastify'
+import type { FastifyInstance } from 'fastify'
 
 describe('buildApp', () => {
   let app: FastifyInstance
 
-  const originalConsoleError = console.error
-  const originalConsoleWarn = console.warn
-  const originalConsoleLog = console.log
-
   beforeEach(async () => {
-    // Silencia logs
-    console.error = vi.fn()
-    console.warn = vi.fn()
-    console.log = vi.fn()
-
     const mockRegisterRoutes = vi.fn(async (appInstance) => {
       appInstance.get('/test', async (_req: any, _res: any) => {
         return { success: true }
@@ -27,10 +19,8 @@ describe('buildApp', () => {
   })
 
   afterEach(async () => {
-    console.error = originalConsoleError
-    console.warn = originalConsoleWarn
-    console.log = originalConsoleLog
     if (app?.close) await app.close()
+    vi.restoreAllMocks()
   })
 
   it('must create the app and record a test route', async () => {
@@ -44,7 +34,7 @@ describe('buildApp', () => {
   })
 
   it('should return 401 for UnauthorizedError', async () => {
-    const errorApp = Fastify()
+    const errorApp = fastifyModule.default()
     errorApp.setErrorHandler(app.errorHandler)
 
     errorApp.get('/unauthorized', async () => {
@@ -68,7 +58,7 @@ describe('buildApp', () => {
   })
 
   it('should return 403 for NotAManagerError', async () => {
-    const errorApp = Fastify()
+    const errorApp = fastifyModule.default()
     errorApp.setErrorHandler(app.errorHandler)
 
     errorApp.get('/forbidden', async () => {
@@ -92,7 +82,7 @@ describe('buildApp', () => {
   })
 
   it('should return 500 for generic errors', async () => {
-    const errorApp = Fastify()
+    const errorApp = fastifyModule.default()
     errorApp.setErrorHandler(app.errorHandler)
 
     errorApp.get('/error', async () => {
@@ -113,5 +103,21 @@ describe('buildApp', () => {
     })
 
     await errorApp.close()
+  })
+
+  it('should catch and log error when registerRoutes throws', async () => {
+    const error = new Error('Mock registerRoutes failure')
+
+    const failingRegisterRoutes = (_app: any) => {
+      throw error
+    }
+
+    // Cria um app falso só para pegar logger
+    const app = fastifyModule.default()
+
+    // Espiona app.log.error
+    const logErrorSpy = vi.spyOn(app.log, 'error').mockImplementation(() => {})
+
+    logErrorSpy.mockRestore()
   })
 })

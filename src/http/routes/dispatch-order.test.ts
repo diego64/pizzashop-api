@@ -32,7 +32,8 @@ describe('dispatchOrder route', () => {
       return 'rest-123'
     })
 
-    app.setErrorHandler((error, _, reply) => {
+    // Adiciona o error handler, necessário para testar UnauthorizedError e fallback
+    app.setErrorHandler((error, _request, reply) => {
       if (error instanceof UnauthorizedError) {
         return reply.status(401).send({ message: 'Unauthorized' })
       }
@@ -56,7 +57,7 @@ describe('dispatchOrder route', () => {
       status: 'processing',
       createdAt: null,
       customerId: '',
-      totalInCents: 0
+      totalInCents: 0,
     })
 
     const response = await app.inject({
@@ -88,7 +89,7 @@ describe('dispatchOrder route', () => {
       status: 'delivering',
       createdAt: null,
       customerId: '',
-      totalInCents: 0
+      totalInCents: 0,
     })
 
     const response = await app.inject({
@@ -100,5 +101,20 @@ describe('dispatchOrder route', () => {
     expect(response.json()).toEqual({
       message: 'O pedido já foi enviado ao cliente.',
     })
+  })
+
+  it('should return 500 if an unexpected error is thrown', async () => {
+    // Simula erro interno inesperado
+    vi.mocked(db.query.orders.findFirst).mockImplementation(() => {
+      throw new Error('Unexpected failure')
+    })
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/orders/order-error/dispatch',
+    })
+
+    expect(response.statusCode).toBe(500)
+    expect(response.json()).toEqual({ message: 'Unexpected failure' })
   })
 })

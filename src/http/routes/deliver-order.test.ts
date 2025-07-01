@@ -13,7 +13,7 @@ vi.mock('@/db/connection', () => ({
     },
     update: vi.fn(() => ({
       set: vi.fn(() => ({
-        where: vi.fn().mockResolvedValue(undefined),
+        where: vi.fn(),
       })),
     })),
   },
@@ -29,6 +29,18 @@ describe('deliverOrder route', () => {
 
     app.decorateRequest('getManagedRestaurantId', async function () {
       return 'rest-123'
+    })
+
+    // Error handler necessário para capturar UnauthorizedError corretamente
+    app.setErrorHandler((error, _request, reply) => {
+      if (error instanceof UnauthorizedError) {
+        return reply.status(401).send({
+          error: error.name,
+          message: error.message,
+        })
+      }
+
+      return reply.status(500).send({ error: error.name, message: error.message })
     })
 
     await deliverOrder(app)
@@ -79,7 +91,7 @@ describe('deliverOrder route', () => {
     expect(response.json()).toEqual({ message: 'O pedido já foi entregue.' })
   })
 
-  it('should throw UnauthorizedError if order does not belong to restaurant', async () => {
+  it('should return 401 if order does not belong to restaurant', async () => {
     vi.mocked(db.query.orders.findFirst).mockResolvedValue(undefined)
 
     const response = await app.inject({
@@ -87,7 +99,10 @@ describe('deliverOrder route', () => {
       url: '/orders/order-999/deliver',
     })
 
-    expect(response.statusCode).toBe(500)
-    expect(response.body).toContain(UnauthorizedError.prototype.name)
+    expect(response.statusCode).toBe(401)
+    expect(response.json()).toEqual({
+      error: 'UnauthorizedError',
+      message: 'Unauthorized',
+    })
   })
 })

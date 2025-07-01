@@ -105,4 +105,26 @@ describe('getDailyReceiptInPeriod route', () => {
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual([])
   })
+
+  it('should infer end date as 7 days after start if only from is provided', async () => {
+    const from = dayjs().subtract(6, 'days').format('YYYY-MM-DD')
+    const receiptData = [{ date: '01/06', receipt: 1500 }]
+
+    const mockSelect = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      groupBy: vi.fn().mockReturnThis(),
+      having: vi.fn().mockResolvedValue(receiptData),
+    }
+
+    vi.mocked(db.select).mockReturnValue(mockSelect as any)
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/metrics/daily-receipt-in-period?from=${from}`,
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual(receiptData)
+  })
 })

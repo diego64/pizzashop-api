@@ -26,12 +26,20 @@ describe('approveOrder route', () => {
   beforeEach(async () => {
     app = fastify()
 
-    // Define o decorator antes de app.ready()
     app.decorateRequest('getManagedRestaurantId', async function () {
       return currentRestaurantId
     })
 
-    app.decorate('authenticate', async (request: any, reply: any) => {})
+    app.decorate('authenticate', async (_request: any, _reply: any) => {})
+
+    app.setErrorHandler((error: { name: any; message: any }, _req: any, reply: { status: (arg0: number) => { (): any; new(): any; send: { (arg0: { error: any; message: any }): void; new(): any } } }) => {
+      const statusCode = error instanceof UnauthorizedError ? 401 : 500
+
+      reply.status(statusCode).send({
+        error: error.name,
+        message: error.message,
+      })
+    })
 
     await approveOrder(app)
     await app.ready()
@@ -88,30 +96,21 @@ describe('approveOrder route', () => {
     })
   })
 
-  it('should throw UnauthorizedError if order does not belong to restaurant', async () => {
+  it('should return 401 if order does not belong to restaurant', async () => {
     currentRestaurantId = 'resto-1'
     const orderId = 'order-404'
 
     vi.mocked(db.query.orders.findFirst).mockResolvedValue(undefined)
 
-    // Verifica se o erro lançado é UnauthorizedError (exemplo)
-    try {
-      await app.inject({
-        method: 'PATCH',
-        url: `/orders/${orderId}/approve`,
-      })
-    } catch (err) {
-      expect(err).toBeInstanceOf(UnauthorizedError)
-      expect((err as UnauthorizedError).message).toBe('Unauthorized')
-    }
-
-    // Verifica a resposta HTTP
     const response = await app.inject({
       method: 'PATCH',
       url: `/orders/${orderId}/approve`,
     })
 
-    expect(response.statusCode).toBe(500)
-    expect(response.body).toContain('Unauthorized')
+    expect(response.statusCode).toBe(401)
+    expect(response.json()).toEqual({
+      error: 'UnauthorizedError',
+      message: 'Unauthorized',
+    })
   })
 })

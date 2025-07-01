@@ -28,7 +28,6 @@ describe('cancelOrder route', () => {
   beforeEach(async () => {
     app = fastify()
 
-    // Simula o usuário logado
     currentUser = { restaurantId: undefined }
 
     app.decorateRequest('getCurrentUser', async function () {
@@ -133,5 +132,24 @@ describe('cancelOrder route', () => {
     expect(response.statusCode).toBe(204)
     expect(db.update).toHaveBeenCalledWith(orders)
     expect(mockWhere).toHaveBeenCalledWith(eq(orders.id, 'order-1'))
+  })
+
+  it('should return 500 if an unexpected error happens', async () => {
+    currentUser.restaurantId = 'rest-1'
+
+    // Simula falha no banco
+    vi.mocked(db.query.orders.findFirst).mockImplementation(() => {
+      throw new Error('Unexpected DB failure')
+    })
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/orders/order-1/cancel',
+    })
+
+    expect(response.statusCode).toBe(500)
+    expect(response.json()).toEqual({
+      message: 'Unexpected DB failure',
+    })
   })
 })

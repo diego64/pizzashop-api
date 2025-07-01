@@ -1,5 +1,6 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
+import cookie from '@fastify/cookie' // <-- IMPORTAR cookie
 import jwt from '@fastify/jwt'
 import { ZodTypeProvider } from 'fastify-type-provider-zod'
 import { registerRoutes } from './routes'
@@ -7,6 +8,8 @@ import { registerRoutes } from './routes'
 export async function createApp() {
   //server creation
   const app = Fastify().withTypeProvider<ZodTypeProvider>()
+
+  await app.register(cookie)
 
   //JWT middleware
   await app.register(jwt, {
@@ -24,13 +27,13 @@ export async function createApp() {
   app.decorate('authenticate', async function (request: any, reply: any) {
     try {
       await request.jwtVerify()
+	  // Adicione o return para interromper a execução e enviar a resposta
     } catch {
-      reply.status(401).send({ message: 'Unauthorized' })
+      return reply.status(401).send({ message: 'Unauthorized' })
     }
   })
 
   await registerRoutes(app)
-
   //routes
   app.get('/protected-route', { preValidation: [app.authenticate] }, async () => {
     return { ok: true }
